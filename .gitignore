@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+*.wav
+*.mp3
+*.log
+.agents/
+ngrok.exe
+*.onnx
+*.onnx.json
+.spotify_cache
+scratch/
+

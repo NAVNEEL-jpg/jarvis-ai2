@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. Core Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="hud-container hidden">
+        <!-- ── HEADER ── -->
+        <header class="hud-header">
+            <div class="header-left">
+                <div class="logo">STARK INDUSTRIES</div>
+                <div class="sys-version">J.A.R.V.I.S. OS V7.0.1</div>
+            </div>
+            <div class="header-center">
+                <div class="ticker-wrap">
+                    <span class="ticker-label">STATUS FEED:</span>
+                    <span id="ticker-text" class="ticker-text">LOADING CORE SYSTEMS... HOLD STEADY</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div id="hud-clock" class="hud-clock">00:00:00</div>
+                <div id="hud-date" class="hud-date">JANUARY 01, 2026</div>
+            </div>
+        </header>
+
+        <!-- ── MAIN HUD GRID ── -->
+        <main class="hud-grid">
+            
+            <!-- LEFT PANEL: SYSTEM DIAGNOSTICS & CONTROLS -->
+            <section class="hud-panel left-panel">
+                <div class="panel-header">
+                    <span class="icon">▼</span> SYSTEM DIAGNOSTICS
+                </div>
+                <div class="panel-content">
+                    <!-- CPU Usage -->
+                    <div class="metric-group">
+                        <div class="metric-label">
+                            <span>CPU CORE LOAD</span>
+                            <span id="cpu-value" class="metric-number">0%</span>
+                        </div>
+                        <div class="progress-container">
+                            <div id="cpu-bar" class="progress-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- RAM Usage -->
+                    <div class="metric-group">
+                        <div class="metric-label">
+                            <span>SYSTEM MEMORY</span>
+                            <span id="ram-value" class="metric-number">0%</span>
+                        </div>
+                        <div class="metric-sublabel" id="ram-details">0.00 GB / 0.00 GB</div>
+                        <div class="progress-container">
+                            <div id="ram-bar" class="progress-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Disk Usage -->
+                    <div class="metric-group">
+                        <div class="metric-label">
+                            <span>LOCAL DISK (D:)</span>
+                            <span id="disk-value" class="metric-number">0%</span>
+                        </div>
+                        <div class="metric-sublabel" id="disk-details">0.00 GB / 0.00 GB</div>
+                        <div class="progress-container">
+                            <div id="disk-bar" class="progress-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Battery Status -->
+                    <div class="metric-group">
+                        <div class="metric-label">
+                            <span>ESTIMATED POWER</span>
+                            <span id="battery-value" class="metric-number">100%</span>
+                        </div>
+                        <div class="metric-sublabel" id="battery-source">AC POWER SUPPLY</div>
+                        <div class="progress-container">
+                            <div id="battery-bar" class="progress-bar charging" style="width: 100%"></div>
+                        </div>
+                    </div>
+
+                    <!-- GPU load -->
+                    <div class="metric-group">
+                        <div class="metric-label">
+                            <span>GPU TELEMETRY</span>
+                            <span id="gpu-value" class="metric-number">0%</span>
+                        </div>
+                        <div class="metric-sublabel" id="gpu-details">TEMP: 35°C | VRAM: 0.0 GB / 0.0 GB</div>
+                        <div class="progress-container">
+                            <div id="gpu-bar" class="progress-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Fan speed & CPU temperature -->
+                    <div class="metric-group">
+                        <div class="metric-label">
+                            <span>COOLING & RPM</span>
+                        </div>
+                        <div class="metric-sublabel-split">
+                            <div>CPU TEMP: <span id="cpu-temp-val">--°C</span></div>
+                            <div>CPU FAN: <span id="cpu-fan-val">-- RPM</span></div>
+                            <div>GPU FAN: <span id="gpu-fan-val">-- RPM</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-header" style="margin-top: 15px;">
+                    <span class="icon">▼</span> QUICK LINKS
+                </div>
+                <div class="panel-content quick-links">
+                    <a href="https://youtube.com" target="_blank" class="hud-link">YOUTUBE</a>
+                    <a href="https://google.com" target="_blank" class="hud-link">GOOGLE</a>
+                    <a href="https://supabase.com" target="_blank" class="hud-link">SUPABASE</a>
+                    <a href="http://192.168.1.103:8123" target="_blank" class="hud-link">HOME ASSISTANT</a>
+                </div>
+            </section>
+
+            <!-- CENTER PANEL: ARC REACTOR & TEXT TERMINAL -->
+            <section class="center-panel">
+                <div class="reactor-container">
+                    <div class="reactor-glow"></div>
+                    <div class="reactor-svg-wrapper" id="reactor-trigger">
+                        <!-- Arc Reactor MK VI SVG -->
+                        <svg viewBox="0 0 200 200" width="100%" height="100%">
+                            <defs>
+                                <filter id="hud-glow" x="-20%" y="-20%" width="140%" height="140%">
+                                    <feGaussianBlur stdDeviation="3" result="blur" />
+                                    <feMerge>
+                                        <feMergeNode in="blur" />
+                                        <feMergeNode in="SourceGraphic" />
+                                    </feMerge>
+                                </filter>
+                                <linearGradient id="cyan-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#00d2ff" />
+                                    <stop offset="100%" stop-color="#0066aa" />
+                                </linearGradient>
+                            </defs>
+                            <!-- Outer Ticker Ring -->
+                            <circle class="ring-outer" cx="100" cy="100" r="88" fill="none" stroke="#00f0ff" stroke-width="1" stroke-dasharray="10 4 2 4 8 4" />
+                            <!-- Middle Rotating Ring -->
+                            <circle class="ring-middle" cx="100" cy="100" r="76" fill="none" stroke="rgba(0, 240, 255, 0.35)" stroke-width="4.5" stroke-dasharray="30 8 10 8" />
+                            <!-- Inner Rotating Ring -->
+                            <circle class="ring-inner" cx="100" cy="100" r="64" fill="none" stroke="#00f0ff" stroke-width="1.5" stroke-dasharray="4 4" />
+                            <!-- Main Core Glow -->
+                            <g class="core-group" id="reactor-core">
+                                <circle cx="100" cy="100" r="50" fill="none" stroke="rgba(0, 240, 255, 0.7)" stroke-width="2" filter="url(#hud-glow)" />
+                                <!-- MK VI Triangular Reactor Plates -->
+                                <polygon points="100,56 138,122 62,122" fill="none" stroke="#00f0ff" stroke-width="3" stroke-linejoin="round" filter="url(#hud-glow)" />
+                                <circle cx="100" cy="100" r="22" fill="none" stroke="rgba(0, 240, 255, 0.8)" stroke-width="1.5" />
+                                <circle cx="100" cy="100" r="10" fill="#00f0ff" filter="url(#hud-glow)" />
+                            </g>
+                        </svg>
+                    </div>
+                    <div class="reactor-label">
+                        <span class="label-title">CORE REACTOR</span>
+                        <span id="reactor-status" class="label-status">SYSTEM STANDBY</span>
+                    </div>
+                </div>
+
+                <!-- Mobile input active notification banner -->
+                <div class="mobile-active-banner" id="mobile-active-banner">
+                    <span class="banner-dot"></span>
+                    MOBILE MIC ACTIVE — LAPTOP MIC SILENCED
+                </div>
+
+                <!-- Text command console terminal -->
+                <div class="command-console">
+                    <div class="console-title">J.A.R.V.I.S. INTERACTIVE COM LINK</div>
+                    <form id="command-form" class="console-input-row">
+                        <span class="prompt">></span>
+                        <input type="text" id="command-input" autocomplete="off" placeholder="TRANSMIT INTENT PATHWAY TO CORE..." />
+                        <button type="submit" class="hud-btn" id="send-btn">TRANSMIT</button>
+                    </form>
+                    <div class="console-actions">
+                        <button class="hud-btn danger-btn" id="stop-speech-btn">INTERRUPT AUDIO</button>
+                    </div>
+                </div>
+
+                <!-- Audio spectrum speaker output simulation -->
+                <div class="spectrum-visualizer" id="spectrum-bars">
+                    <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+                    <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+                    <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+                    <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+                </div>
+            </section>
+
+            <!-- RIGHT PANEL: WEATHER, TASKS & REALTIME LOG -->
+            <section class="hud-panel right-panel">
+                <!-- Weather Widget -->
+                <div class="panel-header">
+                    <span class="icon">▼</span> ENVIRONMENTAL MONITOR
+                </div>
+                <div class="panel-content weather-widget">
+                    <div class="weather-row-main">
+                        <div id="weather-temp" class="weather-temp">--°C</div>
+                        <div class="weather-condition-wrap">
+                            <div id="weather-city" class="weather-city">KOLKATA, IN</div>
+                            <div id="weather-cond" class="weather-cond">SCANNING ENVIRONMENT...</div>
+                        </div>
+                    </div>
+                    <div class="weather-details-grid">
+                        <div class="w-detail-item">
+                            <span class="w-label">FEELS LIKE</span>
+                            <span id="w-feels" class="w-val">--°C</span>
+                        </div>
+                        <div class="w-detail-item">
+                            <span class="w-label">HUMIDITY</span>
+                            <span id="w-hum" class="w-val">--%</span>
+                        </div>
+                        <div class="w-detail-item">
+                            <span class="w-label">WIND SPEED</span>
+                            <span id="w-wind" class="w-val">-- km/h</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tasks Widget -->
+                <div class="panel-header" style="margin-top: 15px;">
+                    <span class="icon">▼</span> SIR'S TODAY TASK LIST
+                </div>
+                <div class="panel-content tasks-panel">
+                    <ul id="tasks-list" class="hud-list">
+                        <li class="loading">SYNCING WITH DATABASE...</li>
+                    </ul>
+                </div>
+
+                <!-- Alarms Widget -->
+                <div class="panel-header" style="margin-top: 15px;">
+                    <span class="icon">▼</span> CORE ALARMS SCHEDULER
+                </div>
+                <div class="panel-content alarms-panel">
+                    <form id="alarm-form" class="alarm-input-row">
+                        <input type="time" id="alarm-time" required />
+                        <input type="text" id="alarm-label" placeholder="LABEL..." autocomplete="off" />
+                        <button type="submit" class="hud-btn mini-btn">ADD</button>
+                    </form>
+                    <ul id="alarms-list" class="hud-list" style="margin-top: 10px;">
+                        <li>NO ACTIVE ALARMS</li>
+                    </ul>
+                </div>
+
+                <!-- Logs console -->
+                <div class="panel-header" style="margin-top: 15px;">
+                    <span class="icon">▼</span> DECISION TREE LOGS
+                </div>
+                <div class="panel-content log-panel">
+                    <div id="log-feed" class="terminal-logs">
+                        <div class="log-entry system">[SYSTEM ONLINE] INITIALIZING CORE TELEMETRY...</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- ── FOOTER POWER PANEL & MUSIC ── -->
+        <footer class="hud-footer">
+            <div class="footer-left">
+                <div class="power-controls">
+                    <button class="hud-icon-btn" id="btn-lock" title="Lock System">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                            <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z"/>
+                        </svg>
+                        <span>LOCK</span>
+                    </button>
+                    <button class="hud-icon-btn" id="btn-power" title="Shut Down Jarvis">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                            <path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C18.43 8.5 19 10.18 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-1.82.57-3.5 1.59-4.42L5.17 5.17C3.8 6.8 3 8.8 3 11c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.2-.8-4.2-2.17-5.83z"/>
+                        </svg>
+                        <span>SHUTDOWN</span>
+                    </button>
+                </div>
+
+                <!-- Active Input Device Switcher -->
+                <div class="device-switcher" title="Select which device's microphone Jarvis listens to">
+                    <div class="device-switcher-label">ACTIVE INPUT</div>
+                    <div class="device-switcher-pills">
+                        <button class="device-pill" id="device-laptop" data-device="laptop">
+                            <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>
+                            LAPTOP
+                        </button>
+                        <button class="device-pill" id="device-mobile" data-device="mobile">
+                            <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></svg>
+                            MOBILE
+                        </button>
+                        <button class="device-pill" id="device-both" data-device="both">
+                            <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+                            BOTH
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Media widget -->
+            <div class="footer-center media-player" style="position: relative;">
+                <div class="media-details">
+                    <div class="media-track">STARK INDUSTRIES SOUNDTRACK</div>
+                    <div class="media-artist font-mono">BGM_LOOP_ACTIVE.WAV</div>
+                </div>
+                <div class="media-controls">
+                    <button class="player-btn" id="play-pause-bgm">PLAY</button>
+                    <button class="player-btn" id="spotify-device-selector" style="display: none; border-color: var(--warning); color: var(--warning); margin-left: 8px;" title="Switch Output Speaker">DEVICE</button>
+                    <div class="player-timeline">
+                        <div id="media-progress" class="progress-fill" style="width: 45%"></div>
+                    </div>
+                    <span id="player-time" class="player-time font-mono">01:42</span>
+                </div>
+                <div id="spotify-device-dropdown" class="spotify-device-dropdown hidden">
+                    <div class="dropdown-header">CONNECTED OUTPUTS</div>
+                    <div id="spotify-device-list" class="device-list">
+                        <!-- Filled dynamically -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer-right">
+                <div class="automations-trigger-wrap" style="display: flex; gap: 8px;">
+                    <button class="hud-btn" id="btn-mobile-setup-main" style="border-color: rgba(255, 150, 0, 0.4); color: #ff9900;">MOBILE HELPER</button>
+                    <button class="hud-btn" id="btn-sync-automations">REFRESH AUTOMATIONS</button>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Hidden audio element for futuristic sci-fi ambiance loops -->
+    <audio id="ambient-bgm" loop src="https://assets.mixkit.co/active_storage/sfx/2568/2568-84.wav"></audio>
+
+    <!-- ── SECURITY SHIELD LOCK OVERLAY ── -->
+    <div id="lock-screen" class="lock-overlay">
+        <div class="lock-panel">
+            <div class="lock-logo">STARK INDUSTRIES</div>
+            <div class="lock-title">J.A.R.V.I.S. SECURE INTERACTION LINK</div>
+            <div class="lock-status" id="lock-status">SECURITY PROTOCOL ACTIVE. AUTHENTICATION REQUIRED.</div>
+            
+            <!-- Facial recognition verification scan animation grid -->
+            <div class="face-scanner-container" id="face-scanner-wrap">
+                <div class="scanner-grid"></div>
+                <div class="scanner-line"></div>
+                <div class="scanner-dot"></div>
+                <div class="scanner-text" id="face-scanner-text">CAMERA STANDBY</div>
+            </div>
+
+            <!-- Keypad container -->
+            <div class="keypad-container">
+                <div class="keypad-display" id="keypad-display"></div>
+                <div class="keypad-grid">
+                    <button class="key-btn" data-val="1">1</button>
+                    <button class="key-btn" data-val="2">2</button>
+                    <button class="key-btn" data-val="3">3</button>
+                    <button class="key-btn" data-val="4">4</button>
+                    <button class="key-btn" data-val="5">5</button>
+                    <button class="key-btn" data-val="6">6</button>
+                    <button class="key-btn" data-val="7">7</button>
+                    <button class="key-btn" data-val="8">8</button>
+                    <button class="key-btn" data-val="9">9</button>
+                    <button class="key-btn danger" id="key-clear">CLR</button>
+                    <button class="key-btn" data-val="0">0</button>
+                    <button class="key-btn success" id="key-enter">ENT</button>
+                </div>
+            </div>
+
+            <div class="lock-actions" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px; width: 100%;">
+                <button class="hud-btn" id="btn-face-verify" style="width: 100%;">FACIAL RECOGNITION SCAN</button>
+                <button class="hud-btn" id="btn-mobile-setup" style="width: 100%; border-color: rgba(255, 150, 0, 0.4); color: #ff9900;">MOBILE HELPER</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── MOBILE PERMISSIONS SETUP MODAL ── -->
+    <div id="mobile-setup-modal" class="lock-overlay hidden" style="z-index: 10000; background: rgba(0, 5, 10, 0.96);">
+        <div class="lock-panel" style="max-width: 480px; width: 90%; border: 1px solid #ff9900; box-shadow: 0 0 20px rgba(255, 150, 0, 0.2);">
+            <div class="lock-logo" style="color: #ff9900; border-color: rgba(255, 150, 0, 0.3);">MOBILE ACCESS HUB</div>
+            <div class="lock-title">IPHONE / CHROME PERMISSION ACTIVATOR</div>
+            
+            <div class="setup-instructions" style="text-align: left; font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.4; color: var(--text-primary); margin: 15px 0; max-height: 250px; overflow-y: auto; padding-right: 5px; width: 100%;">
+                <p style="color: #ff9900; font-weight: bold; margin-bottom: 10px;">[1] SECURE ORIGIN PROTOCOL (HTTPS)</p>
+                <p style="margin-left: 10px; margin-bottom: 15px;">iOS Chrome requires an HTTPS connection for Camera & Mic. Ensure you are using the ngrok URL (e.g. <span style="color: #00f0ff;">https://...ngrok-free.dev</span>), NOT the local HTTP IP.</p>
+                
+                <p style="color: #ff9900; font-weight: bold; margin-bottom: 10px;">[2] iOS SYSTEM PERMISSIONS</p>
+                <p style="margin-left: 10px; margin-bottom: 15px;">Open your iPhone <strong>Settings</strong> -> scroll down to <strong>Chrome</strong> -> toggle both <strong>Camera</strong> and <strong>Microphone</strong> to <span style="color: var(--success);">ON</span>.</p>
+                
+                <p style="color: #ff9900; font-weight: bold; margin-bottom: 10px;">[3] CHROME SITE SETTINGS</p>
+                <p style="margin-left: 10px; margin-bottom: 15px;">Tap the options/settings icon near Chrome's address bar, and ensure camera and microphone access are allowed for this site.</p>
+
+                <p style="color: #ff9900; font-weight: bold; margin-bottom: 10px;">[4] TRANSCRIBE FALLBACK SYSTEM</p>
+                <p style="margin-left: 10px; margin-bottom: 15px;">Because iOS Chrome does not natively support standard Web Speech API, a custom WAV recorder will activate when you tap the Arc Reactor on mobile. Tap once to start recording, tap again to transmit to J.A.R.V.I.S. core.</p>
+
+                <p style="color: #ff9900; font-weight: bold; margin-bottom: 10px;">[5] AUDIO SPEAKER ACTIVATION</p>
+                <p style="margin-left: 10px; margin-bottom: 15px;">iPhones block automatic browser audio. Flip the physical switch on the side of your phone to **RING** (not silent). Tap **TEST AUDIO SPEAKER** below to unlock playback.</p>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 10px; width: 100%;">
+                <button class="hud-btn success-btn" id="btn-trigger-permissions" style="width: 100%; border-color: var(--success); color: var(--success);">
+                    INITIATE PERMISSION PROMPTS
+                </button>
+                <button class="hud-btn" id="btn-test-speaker" style="width: 100%; border-color: #00f0ff; color: #00f0ff;">
+                    TEST AUDIO SPEAKER
+                </button>
+                <button class="hud-btn" id="btn-close-setup" style="width: 100%;">
+                    CLOSE SETUP PANEL
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden audio element for futuristic sci-fi ambiance loops -->
+    <audio id="alarm-ringtone" loop src="https://assets.mixkit.co/active_storage/sfx/911/911-84.wav"></audio>
+
+    <!-- Hidden silent audio loop to prevent OS browser suspension in background -->
+    <audio id="silent-wakelock" loop src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAAGRhdGEAcgAAAAAA"></audio>
+
+    <script src="app.js"></script>
+</body>
+</html>
