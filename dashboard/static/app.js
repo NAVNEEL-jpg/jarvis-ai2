@@ -411,6 +411,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function fetchActiveDevice() {
+        if (sessionStorage.getItem("jarvis_verified") !== "true") return;
         fetch("/api/active_device")
             .then(res => res.json())
             .then(data => {
@@ -499,6 +500,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const alarmLabelInput = document.getElementById("alarm-label");
     const alarmsList = document.getElementById("alarms-list");
 
+    // Power Schedules Elements
+    const powerScheduleForm = document.getElementById("power-schedule-form");
+    const powerActionSelect = document.getElementById("power-action-select");
+    const powerDelayInput = document.getElementById("power-delay-input");
+    const powerSchedulesList = document.getElementById("power-schedules-list");
+
     // Spotify WiFi output switcher elements
     const spotifyDeviceSelector = document.getElementById("spotify-device-selector");
     const spotifyDeviceDropdown = document.getElementById("spotify-device-dropdown");
@@ -516,6 +523,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const keyClear = document.getElementById("key-clear");
     const keyEnter = document.getElementById("key-enter");
     const btnFaceVerify = document.getElementById("btn-face-verify");
+    const btnVoiceVerify = document.getElementById("btn-voice-verify");
     const faceScannerWrap = document.getElementById("face-scanner-wrap");
     const faceScannerText = document.getElementById("face-scanner-text");
 
@@ -760,56 +768,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ── Security Lock Authorization Flow ──
 
-    let authCheckTimeout = null;
-
-    function checkAuth() {
-        if (authCheckTimeout) clearTimeout(authCheckTimeout);
-        
-        fetch("/api/status")
-            .then(res => res.json())
-            .then(data => {
-                if (data.is_locked) {
-                    sessionStorage.removeItem("jarvis_verified");
-                    lockScreen.classList.remove("hidden");
-                    hudContainer.classList.add("hidden");
-                    
-                    // Automatically trigger video face verification once on page load
-                    if (!hasAttemptedAutoScan) {
-                        hasAttemptedAutoScan = true;
-                        triggerAutomaticFaceScan();
-                    }
-                    
-                    authCheckTimeout = setTimeout(checkAuth, 1000);
-                } else {
-                    sessionStorage.setItem("jarvis_verified", "true");
-                    lockScreen.classList.add("hidden");
-                    hudContainer.classList.remove("hidden");
-                    if (!isMainHUDInitialized) {
-                        initializeMainHUD();
-                    }
-                }
-            })
-            .catch(() => {
-                if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" && window.location.protocol !== "file:") {
-                    if (!API_BASE) {
-                        lockStatus.textContent = "OFFLINE: UPLINK NOT ESTABLISHED. CLICK 'LINK UPLINK' IN THE TOP-RIGHT TO CONFIGURE.";
-                        lockStatus.style.color = "var(--danger)";
-                    } else {
-                        lockStatus.textContent = `OFFLINE: CANNOT REACH TUNNEL (${API_BASE}). VERIFY PORT OR TUNNEL IS ACTIVE.`;
-                        lockStatus.style.color = "var(--danger)";
-                    }
-                } else {
-                    lockStatus.textContent = "OFFLINE: CANNOT CONNECT TO LOCAL SERVER. RUN THE JARVIS BAT SHORTCUT.";
-                    lockStatus.style.color = "var(--danger)";
-                }
-                authCheckTimeout = setTimeout(checkAuth, 2000);
-            });
-    }
-
-    function triggerAutomaticFaceScan() {
+    function triggerAutomaticFaceScan(isAutomatic) {
         faceScannerWrap.classList.add("scanning");
         faceScannerText.textContent = "SCANNING...";
-        lockStatus.textContent = "INITIATING AUTOMATIC VIDEO VERIFICATION...";
+        lockStatus.textContent = "INITIATING VIDEO VERIFICATION SCAN...";
 
         // Try phone/browser camera first
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
@@ -861,30 +823,39 @@ document.addEventListener("DOMContentLoaded", () => {
             }, 1000);
         })
         .catch(err => {
-            console.log("Browser camera denied, falling back to backend webcam...", err);
-            fetch("/api/face_verify", { method: "POST" })
-            .then(res => res.json())
-            .then(data => {
-                faceScannerWrap.classList.remove("scanning");
-                faceScannerText.textContent = "CAMERA STANDBY";
-                
-                if (data.verified) {
-                    lockStatus.textContent = "BIOMETRIC VERIFIED. ACCESS GRANTED.";
-                    lockStatus.style.color = "var(--success)";
-                    setTimeout(unlockJarvis, 1000);
-                } else {
-                    playBeep("error");
-                    lockStatus.textContent = `VIDEO SHIELD FAILED: ${data.error || "NO RECOGNIZED USER"}. PLEASE ENTER PASSCODE.`;
-                    lockStatus.style.color = "var(--warning)";
-                }
-            })
-            .catch(() => {
-                faceScannerWrap.classList.remove("scanning");
-                faceScannerText.textContent = "CAMERA STANDBY";
-                playBeep("error");
-                lockStatus.textContent = "VIDEO SOURCE OFFLINE. PLEASE ENTER PASSCODE.";
+            console.log("Browser camera denied/unavailable:", err);
+            faceScannerWrap.classList.remove("scanning");
+            faceScannerText.textContent = "CAMERA STANDBY";
+            
+            if (isAutomatic) {
+                // For automatic page-load scans, do NOT fall back to local server webcam
+                // as that blocks the Flask thread and locks up the page.
+                lockStatus.textContent = "CAMERA STANDBY. PLEASE ENTER PASSCODE OR SCAN MANUALLY.";
                 lockStatus.style.color = "var(--warning)";
-            });
+            } else {
+                // Only manually triggered scans fall back to the backend camera
+                lockStatus.textContent = "BROWSER CAMERA DENIED. INITIATING SERVER WEB CAPTURE...";
+                lockStatus.style.color = "var(--warning)";
+                
+                fetch("/api/face_verify", { method: "POST" })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.verified) {
+                        lockStatus.textContent = "BIOMETRIC VERIFIED. ACCESS GRANTED.";
+                        lockStatus.style.color = "var(--success)";
+                        setTimeout(unlockJarvis, 1000);
+                    } else {
+                        playBeep("error");
+                        lockStatus.textContent = `VIDEO SHIELD FAILED: ${data.error || "NO RECOGNIZED USER"}. PLEASE ENTER PASSCODE.`;
+                        lockStatus.style.color = "var(--warning)";
+                    }
+                })
+                .catch(() => {
+                    playBeep("error");
+                    lockStatus.textContent = "VIDEO SOURCE OFFLINE. PLEASE ENTER PASSCODE.";
+                    lockStatus.style.color = "var(--warning)";
+                });
+            }
         });
     }
 
@@ -901,15 +872,13 @@ document.addEventListener("DOMContentLoaded", () => {
             body: JSON.stringify({ passcode: "4598" })
         })
         .then(() => {
-            if (!isMainHUDInitialized) {
-                initializeMainHUD();
-            }
             // Trigger Jarvis vocal greeting
             fetch("/api/command", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ command: "hello jarvis" })
             });
+            fetchStatus(); // Immediately sync state
         });
     }
 
@@ -989,93 +958,80 @@ document.addEventListener("DOMContentLoaded", () => {
     // Webcam Face Verification Scan
     btnFaceVerify.addEventListener("click", () => {
         playBeep("click");
-        faceScannerWrap.classList.add("scanning");
-        faceScannerText.textContent = "SCANNING...";
-        lockStatus.textContent = "INITIATING FACIAL VECTOR SCAN PROTOCOL...";
+        triggerAutomaticFaceScan(false);
+    });
 
-        // Try phone/browser camera first
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-        .then(stream => {
-            const video = document.createElement("video");
-            video.srcObject = stream;
-            video.play();
-            
-            setTimeout(() => {
-                const canvas = document.createElement("canvas");
-                canvas.width = video.videoWidth || 640;
-                canvas.height = video.videoHeight || 480;
-                const ctx = canvas.getContext("2d");
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    // Voice Passcode Verification
+    function startVoiceAuthentication() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            lockStatus.textContent = "VOICE PROTOCOL OFFLINE. PLEASE TYPE PASSCODE.";
+            lockStatus.style.color = "var(--danger)";
+            playBeep("error");
+            return;
+        }
+
+        try {
+            const authRecog = new SpeechRecognition();
+            authRecog.continuous = false;
+            authRecog.interimResults = false;
+            authRecog.lang = "en-US";
+
+            authRecog.onstart = () => {
+                playBeep("click");
+                lockStatus.textContent = "LISTENING FOR VOICE PASSCODE...";
+                lockStatus.style.color = "var(--accent)";
+            };
+
+            authRecog.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                lockStatus.textContent = `TRANSMITTING SPEECH: "${transcript.toUpperCase()}"`;
                 
-                stream.getTracks().forEach(track => track.stop());
-                
-                canvas.toBlob(blob => {
-                    const formData = new FormData();
-                    formData.append("image", blob, "face.jpg");
-                    
-                    fetch("/api/face_verify", {
-                        method: "POST",
-                        body: formData
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        faceScannerWrap.classList.remove("scanning");
-                        faceScannerText.textContent = "CAMERA STANDBY";
-                        
-                        if (data.verified) {
-                            lockStatus.textContent = "BIOMETRIC VERIFIED. ACCESS GRANTED.";
+                fetch("/api/command", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ command: transcript })
+                })
+                .then(res => {
+                    if (res.status === 200) {
+                        return res.json().then(data => {
+                            sessionStorage.setItem("jarvis_verified", "true");
+                            lockStatus.textContent = "VERIFICATION SUCCESSFUL. ACCESS GRANTED.";
                             lockStatus.style.color = "var(--success)";
                             setTimeout(unlockJarvis, 1000);
-                        } else {
-                            playBeep("error");
-                            lockStatus.textContent = `BIOMETRIC SHIELD: ${data.error || "UNKNOWN USER"}`;
+                        });
+                    } else {
+                        return res.json().then(data => {
+                            lockStatus.textContent = "AUTHENTICATION FAILED: " + data.response.toUpperCase();
                             lockStatus.style.color = "var(--danger)";
-                            setTimeout(() => {
-                                lockStatus.textContent = "SECURITY PROTOCOL ACTIVE. AUTHENTICATION REQUIRED.";
-                                lockStatus.style.color = "var(--warning)";
-                            }, 3000);
-                        }
-                    })
-                    .catch(() => {
-                        faceScannerWrap.classList.remove("scanning");
-                        faceScannerText.textContent = "CAMERA STANDBY";
-                        playBeep("error");
-                        lockStatus.textContent = "COMMUNICATION EXCEPTION: CAMERA MODULE OFFLINE";
-                        lockStatus.style.color = "var(--danger)";
-                    });
-                }, "image/jpeg");
-            }, 1000);
-        })
-        .catch(err => {
-            console.log("Browser camera denied, falling back to backend webcam...", err);
-            fetch("/api/face_verify", { method: "POST" })
-            .then(res => res.json())
-            .then(data => {
-                faceScannerWrap.classList.remove("scanning");
-                faceScannerText.textContent = "CAMERA STANDBY";
-                
-                if (data.verified) {
-                    lockStatus.textContent = "BIOMETRIC VERIFIED. ACCESS GRANTED.";
-                    lockStatus.style.color = "var(--success)";
-                    setTimeout(unlockJarvis, 1000);
-                } else {
-                    playBeep("error");
-                    lockStatus.textContent = `BIOMETRIC SHIELD: ${data.error || "UNKNOWN USER"}`;
+                            playBeep("error");
+                        });
+                    }
+                })
+                .catch(err => {
+                    lockStatus.textContent = "CONNECTION ERROR: CORE UNREACHABLE";
                     lockStatus.style.color = "var(--danger)";
-                    setTimeout(() => {
-                        lockStatus.textContent = "SECURITY PROTOCOL ACTIVE. AUTHENTICATION REQUIRED.";
-                        lockStatus.style.color = "var(--warning)";
-                    }, 3000);
-                }
-            })
-            .catch(() => {
-                faceScannerWrap.classList.remove("scanning");
-                faceScannerText.textContent = "CAMERA STANDBY";
-                playBeep("error");
-                lockStatus.textContent = "COMMUNICATION EXCEPTION: CAMERA MODULE OFFLINE";
+                    playBeep("error");
+                });
+            };
+
+            authRecog.onerror = (e) => {
+                console.error("Speech auth error:", e);
+                lockStatus.textContent = "VOICE INPUT ERROR. PLEASE RETRY.";
                 lockStatus.style.color = "var(--danger)";
-            });
-        });
+                playBeep("error");
+            };
+
+            authRecog.start();
+        } catch (err) {
+            console.error("Failed to start SpeechRecognition for auth:", err);
+            lockStatus.textContent = "VOICE PROTOCOL INIT FAILURE.";
+            lockStatus.style.color = "var(--danger)";
+        }
+    }
+
+    btnVoiceVerify.addEventListener("click", () => {
+        startVoiceAuthentication();
     });
 
     // ── API: Status Updates ──
@@ -1097,8 +1053,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (data.is_locked) {
                     sessionStorage.removeItem("jarvis_verified");
                     lockScreen.classList.remove("hidden");
-                    checkAuth();
+                    hudContainer.classList.add("hidden");
+                    
+                    if (!hasAttemptedAutoScan) {
+                        hasAttemptedAutoScan = true;
+                        triggerAutomaticFaceScan(true);
+                    }
                     return;
+                } else {
+                    sessionStorage.setItem("jarvis_verified", "true");
+                    lockScreen.classList.add("hidden");
+                    hudContainer.classList.remove("hidden");
                 }
 
                 // Sync active device from status payload
@@ -1142,20 +1107,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                 } else {
                     trackEl.textContent = "STARK INDUSTRIES SOUNDTRACK";
-                    artistEl.innerHTML = (isBgmPlaying ? "BGM_LOOP_ACTIVE.WAV" : "BGM_LOOP_STANDBY.WAV") + 
-                        ` | <span id="spotify-connect-btn" style="color: #ff9900; cursor: pointer; text-decoration: underline; font-weight: bold;">CONNECT SPOTIFY</span>`;
+                    artistEl.textContent = "BGM_LOOP_ACTIVE.WAV";
+                    artistEl.style.color = "var(--text-muted)";
                     
                     spotifyDeviceSelector.style.display = "none";
                     spotifyDeviceDropdown.classList.add("hidden");
-                    
-                    const connectBtn = document.getElementById("spotify-connect-btn");
-                    if (connectBtn) {
-                        connectBtn.onclick = (e) => {
-                            e.stopPropagation();
-                            playBeep("click");
-                            window.open("/api/spotify/login", "_blank");
-                        };
-                    }
                     
                     if (!isBgmPlaying) {
                         playPauseBgm.textContent = "PLAY";
@@ -1191,11 +1147,25 @@ document.addEventListener("DOMContentLoaded", () => {
                     tickerTextEl.textContent = "ALL CORES STABLE. READY FOR INTENT STREAM.";
                 }
             })
-            .catch(() => {});
+            .catch(() => {
+                if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" && window.location.protocol !== "file:") {
+                    if (!API_BASE) {
+                        lockStatus.textContent = "OFFLINE: UPLINK NOT ESTABLISHED.";
+                        lockStatus.style.color = "var(--danger)";
+                    } else {
+                        lockStatus.textContent = `OFFLINE: CANNOT REACH TUNNEL (${API_BASE}).`;
+                        lockStatus.style.color = "var(--danger)";
+                    }
+                } else {
+                    lockStatus.textContent = "OFFLINE: CANNOT CONNECT TO LOCAL SERVER.";
+                    lockStatus.style.color = "var(--danger)";
+                }
+            });
     }
 
     // ── API: System Diagnostics ──
     function fetchStats() {
+        if (sessionStorage.getItem("jarvis_verified") !== "true") return;
         fetch("/api/stats")
             .then(res => res.json())
             .then(data => {
@@ -1240,6 +1210,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ── API: Environmental (Weather) ──
     function fetchWeather() {
+        if (sessionStorage.getItem("jarvis_verified") !== "true") return;
         fetch("/api/weather")
             .then(res => res.json())
             .then(data => {
@@ -1257,6 +1228,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ── API: To-Do Checklist ──
     function fetchTasks() {
+        if (sessionStorage.getItem("jarvis_verified") !== "true") return;
         fetch("/api/tasks")
             .then(res => res.json())
             .then(data => {
@@ -1306,6 +1278,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // ── API: Alarms Management ──
 
     function fetchAlarms() {
+        if (sessionStorage.getItem("jarvis_verified") !== "true") return;
         fetch("/api/alarms")
             .then(res => res.json())
             .then(data => {
@@ -1373,11 +1346,85 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
+    // ── API: Power Schedules Management ──
+
+    function fetchPowerSchedules() {
+        if (sessionStorage.getItem("jarvis_verified") !== "true") return;
+        if (!powerSchedulesList) return;
+        fetch("/api/power_schedules")
+            .then(res => res.json())
+            .then(data => {
+                if (data.length === 0) {
+                    powerSchedulesList.innerHTML = `<li>NO POWER SCHEDULES</li>`;
+                    return;
+                }
+                powerSchedulesList.innerHTML = "";
+                data.forEach(sched => {
+                    const li = document.createElement("li");
+                    li.style.display = "flex";
+                    li.style.justifyContent = "space-between";
+                    li.style.alignItems = "center";
+                    li.style.padding = "4px 0";
+                    
+                    const actionLabel = sched.action.toUpperCase();
+                    const activeStatus = sched.active ? " (PENDING)" : " (TRIGGERED/OFF)";
+                    const timeLabel = sched.time_str;
+                    
+                    li.innerHTML = `
+                        <span>${actionLabel} - ${timeLabel}${activeStatus}</span>
+                        <button class="hud-btn mini-btn danger-btn" data-id="${sched.id}">CANCEL</button>
+                    `;
+                    
+                    li.querySelector("button").addEventListener("click", (e) => {
+                        playBeep("error");
+                        const id = e.target.getAttribute("data-id");
+                        deletePowerSchedule(id);
+                    });
+                    powerSchedulesList.appendChild(li);
+                });
+            })
+            .catch(() => {});
+    }
+
+    function deletePowerSchedule(id) {
+        fetch("/api/power_schedules/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: parseInt(id) })
+        })
+        .then(res => res.json())
+        .then(() => {
+            fetchPowerSchedules();
+        });
+    }
+
+    if (powerScheduleForm) {
+        powerScheduleForm.addEventListener("submit", (e) => {
+            e.preventDefault();
+            const actionVal = powerActionSelect.value;
+            const delayVal = parseInt(powerDelayInput.value);
+            if (!actionVal || isNaN(delayVal) || delayVal < 1) return;
+
+            playBeep("click");
+            fetch("/api/power_schedules/add", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: actionVal, delay_mins: delayVal })
+            })
+            .then(res => res.json())
+            .then(() => {
+                powerDelayInput.value = "";
+                fetchPowerSchedules();
+            });
+        });
+    }
+
     // ── API: Console Activity Logs ──
     let lastLogLength = 0;
     let logIdsSeen = new Set();
     
     function fetchLogs() {
+        if (sessionStorage.getItem("jarvis_verified") !== "true") return;
         fetch("/api/logs")
             .then(res => res.json())
             .then(data => {
@@ -1505,9 +1552,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // ── Footer Buttons ──
     btnLock.addEventListener("click", () => {
         playBeep("error");
-        // Lock screen front-end simulation
+        // Lock screen and backend
         sessionStorage.removeItem("jarvis_verified");
-        checkAuth();
+        fetch("/api/lock", { method: "POST" })
+            .then(() => {
+                fetchStatus();
+            });
         
         const entry = document.createElement("div");
         entry.className = "log-entry system";
@@ -1646,98 +1696,113 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // ── HUD Initialization ──
+    // ── HUD Event Listeners & Loop Initialization ──
 
-    function initializeMainHUD() {
-        isMainHUDInitialized = true;
-
-        if (spotifyDeviceSelector) {
-            spotifyDeviceSelector.addEventListener("click", (e) => {
-                e.stopPropagation();
-                playBeep("click");
-                toggleSpotifyDeviceDropdown();
-            });
-        }
-
-        // Wire device switcher pills
-        devicePills.forEach(pill => {
-            pill.addEventListener("click", () => {
-                setActiveDevice(pill.dataset.device);
-            });
+    if (spotifyDeviceSelector) {
+        spotifyDeviceSelector.addEventListener("click", (e) => {
+            e.stopPropagation();
+            playBeep("click");
+            toggleSpotifyDeviceDropdown();
         });
-
-        // Start loops using an inline Web Worker to prevent background throttling
-        const workerCode = `
-            let timer = null;
-            self.onmessage = function(e) {
-                if (e.data === 'start') {
-                    if (timer) clearInterval(timer);
-                    timer = setInterval(() => {
-                        self.postMessage('tick');
-                    }, 1000);
-                } else if (e.data === 'stop') {
-                    if (timer) clearInterval(timer);
-                }
-            };
-        `;
-        
-        try {
-            const blob = new Blob([workerCode], { type: "application/javascript" });
-            const worker = new Worker(URL.createObjectURL(blob));
-            let tickCount = 0;
-            
-            worker.onmessage = function(e) {
-                if (e.data === 'tick') {
-                    tickCount++;
-                    
-                    // fetchStatus every 1s
-                    fetchStatus();
-                    
-                    // fetchLogs every 2s
-                    if (tickCount % 2 === 0) {
-                        fetchLogs();
-                    }
-                    
-                    // fetchStats, fetchAlarms, fetchActiveDevice every 5s
-                    if (tickCount % 5 === 0) {
-                        fetchStats();
-                        fetchAlarms();
-                        fetchActiveDevice();
-                    }
-                    
-                    // fetchTasks every 10s
-                    if (tickCount % 10 === 0) {
-                        fetchTasks();
-                    }
-                    
-                    // fetchWeather every 30s
-                    if (tickCount % 30 === 0) {
-                        fetchWeather();
-                    }
-                }
-            };
-            
-            worker.postMessage('start');
-        } catch (err) {
-            console.warn("Background Web Worker failed to load, falling back to standard timers:", err);
-            setInterval(fetchStatus, 1000);
-            setInterval(fetchStats, 3000);
-            setInterval(fetchWeather, 30000);
-            setInterval(fetchTasks, 5000);
-            setInterval(fetchAlarms, 5000);
-            setInterval(fetchLogs, 2000);
-            setInterval(fetchActiveDevice, 5000);
-        }
-
-        fetchStatus();
-        fetchStats();
-        fetchWeather();
-        fetchTasks();
-        fetchAlarms();
-        fetchLogs();
-        fetchActiveDevice();
     }
 
-    // Run auth check immediately
-    checkAuth();
+    // Wire device switcher pills
+    devicePills.forEach(pill => {
+        pill.addEventListener("click", () => {
+            setActiveDevice(pill.dataset.device);
+        });
+    });
+
+    // Start loops using an inline Web Worker to prevent background throttling
+    const workerCode = `
+        let timer = null;
+        self.onmessage = function(e) {
+            if (e.data === 'start') {
+                if (timer) clearInterval(timer);
+                timer = setInterval(() => {
+                    self.postMessage('tick');
+                }, 1000);
+            } else if (e.data === 'stop') {
+                if (timer) clearInterval(timer);
+            }
+        };
+    `;
+    
+    try {
+        const blob = new Blob([workerCode], { type: "application/javascript" });
+        const worker = new Worker(URL.createObjectURL(blob));
+        let tickCount = 0;
+        
+        worker.onmessage = function(e) {
+            if (e.data === 'tick') {
+                tickCount++;
+                
+                // fetchStatus every 1s
+                fetchStatus();
+                
+                // fetchLogs every 2s
+                if (tickCount % 2 === 0) {
+                    fetchLogs();
+                }
+                
+                // fetchStats, fetchAlarms, fetchActiveDevice every 5s
+                if (tickCount % 5 === 0) {
+                    fetchStats();
+                    fetchAlarms();
+                    fetchPowerSchedules();
+                    fetchActiveDevice();
+                }
+                
+                // fetchTasks every 10s
+                if (tickCount % 10 === 0) {
+                    fetchTasks();
+                }
+                
+                // fetchWeather every 30s
+                if (tickCount % 30 === 0) {
+                    fetchWeather();
+                }
+            }
+        };
+        
+        worker.postMessage('start');
+    } catch (err) {
+        console.warn("Background Web Worker failed to load, falling back to standard timers:", err);
+        setInterval(fetchStatus, 1000);
+        setInterval(fetchStats, 3000);
+        setInterval(fetchWeather, 30000);
+        setInterval(fetchTasks, 5000);
+        setInterval(fetchAlarms, 5000);
+        setInterval(fetchPowerSchedules, 5000);
+        setInterval(fetchLogs, 2000);
+        setInterval(fetchActiveDevice, 5000);
+    }
+
+    // Run initial status/telemetry sync
+    fetchStatus();
+    fetchStats();
+    fetchWeather();
+    fetchTasks();
+    fetchAlarms();
+    fetchPowerSchedules();
+    fetchLogs();
+    fetchActiveDevice();
+
+    // Play J.A.R.V.I.S. welcome lock voice prompt on first user click if screen is locked
+    let hasPlayedWelcomeLock = false;
+    document.addEventListener("click", () => {
+        if (!hasPlayedWelcomeLock && !lockScreen.classList.contains("hidden")) {
+            hasPlayedWelcomeLock = true;
+            fetch("/api/lock_voice_prompt", { method: "POST" })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.speech_id) {
+                        playTTSAudio(data.speech_id);
+                    }
+                })
+                .catch(err => {
+                    console.log("Failed to play lock welcome prompt:", err);
+                });
+        }
+    }, { once: false });
 });

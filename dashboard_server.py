@@ -6,7 +6,7 @@ import shutil
 import requests
 import datetime
 import winsound
-from flask import Flask, jsonify, request, redirect
+from flask import Flask, jsonify, request, redirect, session
 
 import jarvis_state
 from intent_router import handle_command
@@ -19,6 +19,12 @@ base_dir = os.path.dirname(os.path.abspath(__file__))
 static_dir = os.path.join(base_dir, "dashboard", "static")
 
 app = Flask(__name__, static_folder=static_dir, static_url_path="")
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "stark-industries-lock-key-9982")
+
+def is_session_locked():
+    if jarvis_state.state.is_locked:
+        return True
+    return not session.get("verified", False)
 
 @app.after_request
 def add_cors_headers(response):
@@ -69,7 +75,7 @@ def _init_reference_faces():
     except Exception as e:
         print(f"Error loading reference face templates: {e}")
 
-_init_reference_faces()
+# Lazy-load templates when needed, no module-level blocking call
 
 def speak_web_response(text):
     """Speak text in a background thread to prevent blocking Flask routes."""
@@ -164,9 +170,18 @@ def prepare_and_speak_response(text, play_local=True, speech_id=None, resume_spo
 def index():
     return app.send_static_file("index.html")
 
+@app.route("/api/lock_voice_prompt", methods=["POST"])
+def lock_voice_prompt():
+    response = "Systems are locked, Sir. Please provide the passcode, voice authentication, or run face verification."
+    speech_id = int(time.time() * 1000)
+    prepare_and_speak_response(response, play_local=False, speech_id=speech_id)
+    return jsonify({"status": "success", "speech_id": speech_id})
+
 @app.route("/api/status", methods=["GET"])
 def get_status():
-    return jsonify(jarvis_state.state.get_dict())
+    res = jarvis_state.state.get_dict()
+    res["is_locked"] = is_session_locked()
+    return jsonify(res)
 
 @app.route("/api/command", methods=["POST"])
 def run_command_endpoint():
@@ -174,6 +189,32 @@ def run_command_endpoint():
     text = data.get("command", "").strip()
     if not text:
         return jsonify({"error": "Empty command"}), 400
+
+    # Session authentication check
+    if is_session_locked():
+        import re
+        t_norm = text.lower().strip().replace(" ", "").replace("-", "")
+        t_norm = re.sub(r'^(hey)?jarvis', '', t_norm)
+        
+        if "4598" in t_norm or "fourfivenineeight" in t_norm:
+            session["verified"] = True
+            jarvis_state.state.is_locked = False
+            response = "Verification successful. Welcome back, Sir."
+            prepare_and_speak_response(response, play_local=True)
+            return jsonify({"status": "success", "response": response})
+            
+        elif any(phrase in text.lower() for phrase in ["authenticate", "unlock", "log in", "login"]):
+            response = "Standing by. Please state the passcode, Sir."
+            prepare_and_speak_response(response, play_local=True)
+            return jsonify({"status": "success", "response": response})
+            
+        else:
+            response = "Systems are locked, Sir. Please provide the passcode, voice authentication, or run face verification."
+            prepare_and_speak_response(response, play_local=True)
+            return jsonify({
+                "status": "blocked",
+                "response": response
+            }), 403
 
     # Block mobile/web commands when laptop mic has exclusive control
     active_device = jarvis_state.state.active_mic_device
@@ -676,11 +717,19 @@ def verify_passcode():
     data = request.json or {}
     passcode = data.get("passcode", "").strip()
     if passcode == "4598":
+        session["verified"] = True
         jarvis_state.state.is_locked = False
         speak_web_response("Verification successful. Welcome back, Sir.")
         return jsonify({"verified": True})
     speak_web_response("Verification failed.")
     return jsonify({"verified": False, "error": "Invalid passcode"})
+
+@app.route("/api/lock", methods=["POST"])
+def lock_session():
+    session["verified"] = False
+    jarvis_state.state.is_locked = True
+    speak_web_response("Systems locked, Sir. Shield active.")
+    return jsonify({"status": "success", "is_locked": True})
 
 @app.route("/api/face_verify", methods=["POST"])
 def face_verify_endpoint():
@@ -738,6 +787,7 @@ def face_verify_endpoint():
                     verified = True
             
             if verified:
+                session["verified"] = True
                 jarvis_state.state.is_locked = False
                 speak_web_response("Verification successful. Welcome back, Sir.")
                 return jsonify({"verified": True})
@@ -751,7 +801,8 @@ def face_verify_endpoint():
             return jsonify({"verified": False, "error": f"Error processing uploaded image: {e}"})
 
     # 2. Fallback to laptop local webcam capture
-    cap = cv2.VideoCapture(0)
+    # Use DirectShow on Windows for instant camera initialization
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW) if os.name == "nt" else cv2.VideoCapture(0)
     if not cap.isOpened():
         speak_web_response("Verification failed. Camera source offline.")
         return jsonify({
@@ -790,6 +841,7 @@ def face_verify_endpoint():
     cap.release()
     
     if verified:
+        session["verified"] = True
         jarvis_state.state.is_locked = False
         speak_web_response("Verification successful. Welcome back, Sir.")
         return jsonify({"verified": True})
@@ -814,7 +866,10 @@ def transcribe_mobile():
     try:
         whisper_model = getattr(jarvis_state.state, "whisper_model", None)
         if whisper_model is None:
-            return jsonify({"error": "Whisper model not initialized on server"}), 500
+            return jsonify({
+                "status": "warning",
+                "response": "Core voice recognition modules are still initializing, Sir. Please standby."
+            }), 503
 
         jarvis_state.state.status = "processing"
         
@@ -822,7 +877,8 @@ def transcribe_mobile():
             temp_filename,
             vad_filter=True,
             no_speech_threshold=0.6,
-            temperature=0.0
+            temperature=0.0,
+            initial_prompt=jarvis_state.BILINGUAL_PROMPT
         )
         text = " ".join([seg.text for seg in segments]).strip()
         
@@ -1026,6 +1082,110 @@ def spotify_status_poller():
         time.sleep(3)
 
 threading.Thread(target=spotify_status_poller, daemon=True).start()
+
+
+# ── Power Schedules Endpoints ───────────────────────────────────────────────
+
+@app.route("/api/power_schedules", methods=["GET"])
+def get_power_schedules_endpoint():
+    return jsonify(jarvis_state.state.power_schedules)
+
+@app.route("/api/power_schedules/add", methods=["POST"])
+def add_power_schedule_endpoint():
+    data = request.json or {}
+    action = data.get("action", "").strip().lower()
+    delay_mins = data.get("delay_mins")
+    
+    if not action or delay_mins is None:
+        return jsonify({"error": "Action and delay_mins are required"}), 400
+        
+    try:
+        delay_mins = int(delay_mins)
+    except ValueError:
+        return jsonify({"error": "delay_mins must be an integer"}), 400
+        
+    if action not in ["shutdown", "reboot", "sleep", "hibernate"]:
+        return jsonify({"error": "Invalid action"}), 400
+        
+    target_timestamp = time.time() + (delay_mins * 60)
+    target_time_str = datetime.datetime.fromtimestamp(target_timestamp).strftime("%Y-%m-%d %H:%M:%S")
+    label = f"{action.capitalize()} in {delay_mins} minute{'s' if delay_mins > 1 else ''}"
+    
+    current_schedules = jarvis_state.state.power_schedules
+    new_schedule = {
+        "id": int(time.time()),
+        "action": action,
+        "timestamp": target_timestamp,
+        "time_str": target_time_str,
+        "label": label,
+        "active": True
+    }
+    current_schedules.append(new_schedule)
+    jarvis_state.state.power_schedules = current_schedules
+    
+    return jsonify({"status": "success", "schedule": new_schedule})
+
+@app.route("/api/power_schedules/delete", methods=["POST"])
+def delete_power_schedule_endpoint():
+    data = request.json or {}
+    schedule_id = data.get("id")
+    if not schedule_id:
+        return jsonify({"error": "Schedule ID is required"}), 400
+        
+    current_schedules = jarvis_state.state.power_schedules
+    current_schedules = [s for s in current_schedules if s.get("id") != schedule_id]
+    jarvis_state.state.power_schedules = current_schedules
+    return jsonify({"status": "success"})
+
+
+# ── Power Schedule Checker Background Thread ─────────────────────────────────
+
+def power_schedule_checker():
+    while True:
+        try:
+            import jarvis_state
+            import time
+            from system_actions import shutdown_pc, reboot_pc, sleep_pc, hibernate_pc
+            
+            schedules = jarvis_state.state.power_schedules
+            active_schedules = [s for s in schedules if s.get("active")]
+            
+            if active_schedules:
+                now_ts = time.time()
+                updated = False
+                
+                for s in schedules:
+                    if s.get("active") and now_ts >= s.get("timestamp"):
+                        s["active"] = False
+                        updated = True
+                        action = s.get("action")
+                        print(f"\n[POWER SCHEDULE TRIGGERED: {s.get('label')}]")
+                        
+                        # Execute the power action with TTS warning
+                        if action == "shutdown":
+                            speak_web_response("Shutting down the system in five seconds. Goodbye, Sir.")
+                            time.sleep(1)
+                            shutdown_pc()
+                        elif action == "reboot":
+                            speak_web_response("Rebooting the systems in five seconds, Sir.")
+                            time.sleep(1)
+                            reboot_pc()
+                        elif action == "sleep":
+                            speak_web_response("Putting the system to sleep, Sir.")
+                            time.sleep(3)
+                            sleep_pc()
+                        elif action == "hibernate":
+                            speak_web_response("Hibernating the system, Sir.")
+                            time.sleep(3)
+                            hibernate_pc()
+                            
+                if updated:
+                    jarvis_state.state.power_schedules = schedules
+        except Exception as e:
+            print(f"[Power Schedule Checker] Error: {e}")
+        time.sleep(1)
+
+threading.Thread(target=power_schedule_checker, daemon=True).start()
 
 
 # ── Server runner ───────────────────────────────────────────────────────────

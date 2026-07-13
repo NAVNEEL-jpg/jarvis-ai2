@@ -178,4 +178,23 @@ def stop_vm(name):
     if "100%" in out or "state saved" in out.lower() or "saved" in out.lower():
         return f"Virtual machine {name} state has been saved, Sir."
     return f"Could not save state for virtual machine: {out}"
+
+def sleep_pc():
+    try:
+        # Parameter 1: Suspend (0 for Suspend, 1 for Hibernate)
+        # Parameter 2: Force (1 to force immediately)
+        # Parameter 3: DisableWake (0 to allow wake events)
+        ctypes.windll.powrprof.SetSuspendState(0, 1, 0)
+        return "Putting the system to sleep, Sir."
+    except Exception as e:
+        return f"Failed to sleep: {e}"
+
+def hibernate_pc():
+    try:
+        # Parameter 1: Suspend (1 for Hibernate)
+        ctypes.windll.powrprof.SetSuspendState(1, 1, 0)
+        return "Hibernating the system, Sir."
+    except Exception as e:
+        subprocess.Popen(["shutdown", "/h"])
+        return "Hibernating the system, Sir."
 

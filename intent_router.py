@@ -100,6 +100,95 @@ def _trim_response(text: str) -> str:
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     return ' '.join(lines[:2])
 
+def _ask_ollama(text: str) -> str:
+    """Send query to local Ollama instance using the hermes3 model, with qwen3 fallback."""
+    import requests
+    url = "http://localhost:11434/api/generate"
+    
+    # Try hermes3 first, fallback to qwen3:4b
+    models = ["hermes3:8b", "qwen3:4b", "qwen3:0.6b"]
+    
+    payload = {
+        "model": "hermes3:8b",
+        "prompt": f"{_SYSTEM_PROMPT}\n\nUser: {text}\nAssistant:",
+        "stream": False
+    }
+    
+    for model in models:
+        payload["model"] = model
+        try:
+            r = requests.post(url, json=payload, timeout=15)
+            if r.status_code == 200:
+                res_text = r.json().get("response", "").strip()
+                if res_text:
+                    print(f"[Ollama] Query successfully resolved using local {model}")
+                    return _trim_response(res_text)
+            print(f"[Ollama] Model {model} failed with status {r.status_code}")
+        except Exception as e:
+            print(f"[Ollama] Connection to local model {model} failed: {e}")
+            
+    return "I am unable to reach Ollama at the moment, Sir."
+
+def _ask_openrouter(text: str) -> str:
+    """Send text to OpenRouter using nousresearch/hermes-3-llama-3.1-405b."""
+    import requests
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        print("[Router] OpenRouter API key missing. Cannot connect to Hermes 3.")
+        return "OpenRouter API key is not configured, Sir."
+        
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost:5000",
+        "X-Title": "Jarvis HUD"
+    }
+    
+    payload = {
+        "model": "nousresearch/hermes-3-llama-3.1-405b",
+        "messages": [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": text}
+        ],
+        "max_tokens": 150
+    }
+    
+    models = [
+        "nousresearch/hermes-3-llama-3.1-405b",
+        "nousresearch/hermes-3-llama-3.1-405b:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "google/gemma-4-31b-it:free",
+        "meta-llama/llama-3.2-3b-instruct:free",
+        "nousresearch/hermes-3-llama-3.1-70b"
+    ]
+    
+    for model in models:
+        payload["model"] = model
+        for attempt in range(2):
+            try:
+                r = requests.post(url, headers=headers, json=payload, timeout=10)
+                if r.status_code == 200:
+                    data = r.json()
+                    choices = data.get("choices", [])
+                    if choices:
+                        res_text = choices[0].get("message", {}).get("content", "").strip()
+                        if res_text:
+                            return _trim_response(res_text)
+                            
+                if r.status_code == 429:
+                    print(f"[OpenRouter] Model {model} rate limited (429). Retrying in 2 seconds...")
+                    time.sleep(2)
+                    continue
+                    
+                print(f"[OpenRouter] Model {model} failed with status {r.status_code}: {r.text}")
+                break
+            except Exception as e:
+                print(f"[OpenRouter] Request to {model} failed: {e}")
+                break
+            
+    return "I am unable to reach the Hermes agent at the moment, Sir."
+
 def _ask_gemini(text: str) -> str:
     """Pick the right model tier, retry on transient errors, escalate on quota/404."""
     start_tier = _classify_complexity(text)
@@ -108,6 +197,39 @@ def _ask_gemini(text: str) -> str:
     models_to_try = [_TIER[t] for t in tiers[start_idx:]]
 
     print(f"[Gemini] complexity={start_tier} -> starting with {models_to_try[0]}")
+
+    import system_automation
+    tools_list = [
+        system_automation.get_active_window_title,
+        system_automation.minimize_active_window,
+        system_automation.maximize_active_window,
+        system_automation.restore_active_window,
+        system_automation.close_active_window,
+        system_automation.always_on_top,
+        system_automation.show_desktop,
+        system_automation.snap_active_window,
+        system_automation.focus_window_by_title,
+        system_automation.move_mouse_to,
+        system_automation.click_mouse,
+        system_automation.scroll_mouse,
+        system_automation.type_text,
+        system_automation.press_key_combination,
+        system_automation.set_clipboard_text,
+        system_automation.get_clipboard_text,
+        system_automation.get_system_telemetry,
+        system_automation.get_boot_and_uptime,
+        system_automation.create_directory_or_file,
+        system_automation.list_directory_contents,
+        system_automation.get_file_or_folder_size,
+        system_automation.get_network_info,
+        system_automation.ping_host,
+        system_automation.kill_process_by_name,
+        system_automation.list_running_processes,
+        system_automation.capture_and_save_screenshot,
+        system_automation.describe_screen,
+        system_automation.ocr_screen,
+        system_automation.find_text_on_screen
+    ]
 
     last_err = None
     for model in models_to_try:
@@ -119,8 +241,28 @@ def _ask_gemini(text: str) -> str:
                     config=types.GenerateContentConfig(
                         system_instruction=_SYSTEM_PROMPT,
                         max_output_tokens=200,
+                        tools=tools_list,
                     )
                 )
+                
+                # Check for tool call
+                if response.function_calls:
+                    res_parts = []
+                    for call in response.function_calls:
+                        func_name = call.name
+                        func_args = call.args
+                        if hasattr(system_automation, func_name):
+                            func = getattr(system_automation, func_name)
+                            try:
+                                print(f"[Gemini Tool Call] Executing {func_name}(**{func_args})")
+                                result = func(**func_args)
+                                res_parts.append(str(result))
+                            except Exception as e:
+                                res_parts.append(f"Failed to execute {func_name}: {e}")
+                        else:
+                            res_parts.append(f"Function {func_name} is not defined.")
+                    return " ".join(res_parts)
+
                 return _trim_response(response.text)
             except Exception as e:
                 last_err = e
@@ -143,7 +285,16 @@ def _ask_gemini(text: str) -> str:
                 else:
                     break  # unknown error or retries exhausted → next model
 
-    print(f"[Gemini] All models failed. Last error: {last_err}")
+    print(f"[Gemini] All models failed. Falling back to local Ollama...")
+    ollama_res = _ask_ollama(text)
+    if ollama_res and "unable to reach" not in ollama_res:
+        return ollama_res
+
+    print(f"[Gemini] Ollama failed. Falling back to OpenRouter...")
+    fallback_res = _ask_openrouter(text)
+    if fallback_res and "unable to reach" not in fallback_res:
+        return fallback_res
+
     return "I'm having trouble reaching my brain right now."
 
 def _get_time_greeting() -> str:
@@ -373,6 +524,8 @@ def _handle_spotify(text: str):
         "If the user mentions a mood, feeling, or emotion (sad, happy, angry, chill, etc.), "
         "  set action='play', play_type='mood', and query=the raw mood word (e.g. 'sad'). "
         "If the user wants to play a track, artist, album or playlist, set play_type accordingly. "
+        "If the query contains Bengali script characters (e.g., 'আমার সোনার বাংলা'), "
+        "  transliterate them into Latin script (e.g., 'Amar Sonar Bangla') in the query field. "
         "If the user wants to switch the playback device, speaker, or output (e.g. 'switch spotify output to speaker', 'play on bedroom speaker', 'change speaker to laptop'), "
         "  set action='switch_device', and query=the name of the target device/speaker."
         "Set is_music_command=false for non-music commands. "
@@ -481,6 +634,20 @@ def handle_command(text):
     # Use cleaned_text as text_lower for subsequent matches to bypass wake word clutter
     text_lower = cleaned_text
 
+    # Direct Hermes routing
+    if text_lower.startswith("hermes ") or "ask hermes" in text_lower or "tell hermes" in text_lower:
+        query = text_lower.replace("ask hermes", "").replace("tell hermes", "").strip()
+        if query.startswith("to "):
+            query = query[3:].strip()
+        if query.startswith("hermes"):
+            query = query[6:].strip()
+        print(f"[Router] Routing query to local Ollama hermes3: {query}")
+        ollama_res = _ask_ollama(query)
+        if ollama_res and "unable to reach" not in ollama_res:
+            return ollama_res
+        print(f"[Router] Local Ollama failed. Routing to OpenRouter: {query}")
+        return _ask_openrouter(query)
+
     # Try device switcher intent first
     device_res = _handle_active_device_switch(text_lower)
     if device_res:
@@ -503,7 +670,15 @@ def handle_command(text):
 
     # Intercept commands if systems are locked
     if jarvis_state.state.is_locked:
-        return "Systems are locked. Please authenticate manually on the interface."
+        t_norm = text_lower.replace(" ", "").replace("-", "")
+        if "4598" in t_norm or "fourfivenineeight" in t_norm:
+            jarvis_state.state.is_locked = False
+            return "Verification successful. Welcome back, Sir."
+            
+        if any(phrase in text_lower for phrase in ["authenticate", "unlock", "log in", "login"]):
+            return "Standing by. Please state the passcode, Sir."
+            
+        return "Systems are locked, Sir. Please provide the passcode, voice authentication, or run face verification."
 
     kb_color_res = _handle_keyboard_color(text_lower)
     if kb_color_res:
@@ -1025,20 +1200,199 @@ _COLOR_NAMES = {
 }
 
 def _handle_website(text: str):
-    if "jersey website" in text or "thejerseyvault" in text or "jersey vault" in text:
+    t = text.lower().strip()
+    
+    url_target = None
+    if t.startswith("open website "):
+        url_target = t[13:].strip()
+    elif t.startswith("go to "):
+        url_target = t[6:].strip()
+    elif t.startswith("open ") and any(ext in t for ext in [".com", ".org", ".net", ".in", ".co", ".edu", ".gov", ".mil"]):
+        url_target = t[5:].strip()
+        
+    if url_target:
+        url_target = url_target.replace(" ", "")
+        from system_actions import open_url
+        return open_url(url_target)
+        
+    if "jersey website" in t or "thejerseyvault" in t or "jersey vault" in t:
         from system_actions import open_url
         return open_url("https://thejerseyvault.in")
+        
     return None
 
 def _handle_power(text: str):
-    if "power off" in text or "shutdown" in text or "shut down" in text:
-        if "keyboard" not in text and "light" not in text:
+    t = text.lower()
+    
+    # Do not handle keyboard/light power off
+    if "keyboard" in t or "light" in t:
+        return None
+
+    import jarvis_state
+    import time
+    import re
+    import datetime
+    
+    # ── 1. CANCEL SCHEDULED POWER ACTIONS ──
+    if "cancel" in t and any(w in t for w in ["schedule", "shutdown", "power off", "reboot", "restart", "sleep", "hibernate"]):
+        schedules = jarvis_state.state.power_schedules
+        active_schedules = [s for s in schedules if s.get("active")]
+        if not active_schedules:
+            return "There are no active power schedules to cancel, Sir."
+            
+        action_to_cancel = None
+        if "shutdown" in t or "power off" in t or "shut down" in t:
+            action_to_cancel = "shutdown"
+        elif "reboot" in t or "restart" in t:
+            action_to_cancel = "reboot"
+        elif "sleep" in t:
+            action_to_cancel = "sleep"
+        elif "hibernate" in t:
+            action_to_cancel = "hibernate"
+            
+        cancelled_count = 0
+        for s in schedules:
+            if s.get("active"):
+                if action_to_cancel is None or s.get("action") == action_to_cancel:
+                    s["active"] = False
+                    cancelled_count += 1
+                    
+        if cancelled_count > 0:
+            jarvis_state.state.power_schedules = schedules
+            action_name = action_to_cancel if action_to_cancel else "power"
+            return f"I have canceled the scheduled {action_name} actions, Sir."
+        else:
+            return f"No active scheduled {action_to_cancel} was found to cancel, Sir."
+
+    # ── 2. LIST/SHOW SCHEDULED POWER ACTIONS ──
+    if any(p in t for p in ["list scheduled", "show scheduled", "list power schedules", "what are the scheduled power", "show power schedules", "scheduled power actions"]):
+        schedules = jarvis_state.state.power_schedules
+        active_schedules = [s for s in schedules if s.get("active")]
+        if not active_schedules:
+            return "There are no power actions currently scheduled, Sir."
+            
+        lines = []
+        for s in active_schedules:
+            action = s["action"].upper()
+            time_left_secs = max(0, int(s["timestamp"] - time.time()))
+            mins_left = time_left_secs // 60
+            secs_left = time_left_secs % 60
+            if mins_left > 0:
+                left_str = f"{mins_left} minutes and {secs_left} seconds" if secs_left > 0 else f"{mins_left} minutes"
+            else:
+                left_str = f"{secs_left} seconds"
+            lines.append(f"{action} in {left_str}")
+        return f"Current power schedules are: {', '.join(lines)}."
+
+    # ── 3. SCHEDULE A POWER ACTION (RELATIVE OR ABSOLUTE) ──
+    is_schedule = "schedule" in t or "timer" in t or "in" in t or "at" in t or "for" in t
+    
+    action = None
+    if "power off" in t or "shutdown" in t or "shut down" in t:
+        action = "shutdown"
+    elif "reboot" in t or "restart" in t:
+        action = "reboot"
+    elif "sleep" in t:
+        action = "sleep"
+    elif "hibernate" in t:
+        action = "hibernate"
+        
+    if not action:
+        return None
+
+    if not is_schedule:
+        if "power off" in t or "shutdown" in t or "shut down" in t:
             from system_actions import shutdown_pc
             return shutdown_pc()
-    elif "reboot" in text or "restart the computer" in text or "restart the laptop" in text:
-        from system_actions import reboot_pc
-        return reboot_pc()
-    return None
+        elif "reboot" in t or "restart the computer" in t or "restart the laptop" in t:
+            from system_actions import reboot_pc
+            return reboot_pc()
+        elif "sleep" in t:
+            from system_actions import sleep_pc
+            return sleep_pc()
+        elif "hibernate" in t:
+            from system_actions import hibernate_pc
+            return hibernate_pc()
+        return None
+
+    m_rel = re.search(r"in\s+(\d+)\s*(min|hour|hr|sec)", t)
+    target_timestamp = None
+    label = ""
+    
+    if m_rel:
+        val = int(m_rel.group(1))
+        unit = m_rel.group(2)
+        if "hour" in unit or "hr" in unit:
+            duration_secs = val * 3600
+            label_unit = f"{val} hour{'s' if val > 1 else ''}"
+        elif "sec" in unit:
+            duration_secs = val
+            label_unit = f"{val} second{'s' if val > 1 else ''}"
+        else:
+            duration_secs = val * 60
+            label_unit = f"{val} minute{'s' if val > 1 else ''}"
+            
+        target_timestamp = time.time() + duration_secs
+        label = f"{action.capitalize()} in {label_unit}"
+    else:
+        m_abs = re.search(r"(?:at|for)\s+(\d{1,2})[:.]?(\d{2})?\s*(am|pm)?", t)
+        if m_abs:
+            hours = int(m_abs.group(1))
+            minutes = int(m_abs.group(2)) if m_abs.group(2) else 0
+            ampm = m_abs.group(3)
+            
+            if ampm:
+                ampm = ampm.lower()
+                if ampm == "pm" and hours < 12:
+                    hours += 12
+                elif ampm == "am" and hours == 12:
+                    hours = 0
+                    
+            now = datetime.datetime.now()
+            target_dt = now.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+            if target_dt < now:
+                target_dt += datetime.timedelta(days=1)
+                
+            target_timestamp = target_dt.timestamp()
+            disp_ampm = "AM" if hours < 12 else "PM"
+            disp_hour = hours if 0 < hours <= 12 else (hours - 12 if hours > 12 else 12)
+            label = f"{action.capitalize()} at {disp_hour}:{minutes:02d} {disp_ampm}"
+
+    if target_timestamp:
+        target_time_str = datetime.datetime.fromtimestamp(target_timestamp).strftime("%Y-%m-%d %H:%M:%S")
+        schedules = jarvis_state.state.power_schedules
+        new_schedule = {
+            "id": int(time.time()),
+            "action": action,
+            "timestamp": target_timestamp,
+            "time_str": target_time_str,
+            "label": label,
+            "active": True
+        }
+        schedules.append(new_schedule)
+        jarvis_state.state.power_schedules = schedules
+        
+        time_left_secs = int(target_timestamp - time.time())
+        mins_left = time_left_secs // 60
+        if mins_left > 0:
+            left_str = f"in {mins_left} minute{'s' if mins_left > 1 else ''}"
+        else:
+            left_str = f"in {time_left_secs} second{'s' if time_left_secs > 1 else ''}"
+            
+        if ("at" in t or "for" in t) and not m_rel:
+            return f"I have scheduled a system {action} for {label.split(' at ')[1]}, Sir."
+        else:
+            return f"I have scheduled a system {action} {left_str}, Sir."
+            
+    if "schedule" not in t:
+        if "power off" in t or "shutdown" in t or "shut down" in t:
+            from system_actions import shutdown_pc
+            return shutdown_pc()
+        elif "reboot" in t or "restart the computer" in t or "restart the laptop" in t:
+            from system_actions import reboot_pc
+            return reboot_pc()
+            
+    return "I couldn't parse the time for the scheduled power action, Sir."
 
 
 def _handle_system_media(text: str):

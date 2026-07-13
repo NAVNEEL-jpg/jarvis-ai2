@@ -244,6 +244,26 @@
                     </ul>
                 </div>
 
+                <!-- Power Scheduler Widget -->
+                <div class="panel-header" style="margin-top: 15px;">
+                    <span class="icon">▼</span> SYSTEM POWER SCHEDULER
+                </div>
+                <div class="panel-content power-scheduler-panel">
+                    <form id="power-schedule-form" class="alarm-input-row">
+                        <select id="power-action-select" style="background: rgba(0, 0, 0, 0.4); border: 1px solid var(--border-glow); color: var(--text-light); font-family: var(--font-mono); font-size: 0.85rem; padding: 4px; border-radius: 4px; outline: none; width: 100px; height: 26px;">
+                            <option value="shutdown">SHUTDOWN</option>
+                            <option value="reboot">REBOOT</option>
+                            <option value="sleep">SLEEP</option>
+                            <option value="hibernate">HIBERNATE</option>
+                        </select>
+                        <input type="number" id="power-delay-input" placeholder="MINUTES..." min="1" required style="background: rgba(0, 0, 0, 0.4); border: 1px solid var(--border-glow); color: var(--text-light); font-family: var(--font-mono); font-size: 0.85rem; padding: 4px 6px; border-radius: 4px; outline: none; flex-grow: 1; height: 26px; box-sizing: border-box;" />
+                        <button type="submit" class="hud-btn mini-btn">SCHEDULE</button>
+                    </form>
+                    <ul id="power-schedules-list" class="hud-list" style="margin-top: 10px;">
+                        <li>NO POWER SCHEDULES</li>
+                    </ul>
+                </div>
+
                 <!-- Logs console -->
                 <div class="panel-header" style="margin-top: 15px;">
                     <span class="icon">▼</span> DECISION TREE LOGS
@@ -363,6 +383,7 @@
             </div>
 
             <div class="lock-actions" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px; width: 100%;">
+                <button class="hud-btn" id="btn-voice-verify" style="width: 100%; border-color: rgba(0, 240, 255, 0.4); color: var(--accent);">VOICE PASSCODE SCAN</button>
                 <button class="hud-btn" id="btn-face-verify" style="width: 100%;">FACIAL RECOGNITION SCAN</button>
                 <button class="hud-btn" id="btn-mobile-setup" style="width: 100%; border-color: rgba(255, 150, 0, 0.4); color: #ff9900;">MOBILE HELPER</button>
             </div>

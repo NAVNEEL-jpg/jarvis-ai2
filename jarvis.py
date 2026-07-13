@@ -42,6 +42,25 @@ import jarvis_state
 from dashboard_server import run_server
 import spotify_control
 
+# Start dashboard server thread immediately so the UI is available instantly
+flask_thread = threading.Thread(target=run_server, args=(5000,), daemon=True)
+flask_thread.start()
+
+# Automatically open the dashboard in the default browser after a short delay
+def open_browser():
+    time.sleep(1.5)
+    import webbrowser
+    webbrowser.open("http://localhost:5000")
+
+# Check if running in server-only mode (bypasses opening the local UI)
+import sys
+server_only = "--server-only" in sys.argv or "--no-ui" in sys.argv
+
+if not server_only:
+    threading.Thread(target=open_browser, daemon=True).start()
+else:
+    print("[OK] Server-only mode active. Local browser launch bypassed.")
+
 
 
 def _listen_for_stop_word(stop_flag):
@@ -119,11 +138,11 @@ oww_model = Model(wakeword_models=["hey_jarvis", "jarvis"], inference_framework=
 
 # ── Try GPU first (RTX 3050), fall back to CPU ──
 try:
-    whisper_model = WhisperModel("base", device="cuda", compute_type="int8_float16")
+    whisper_model = WhisperModel("small", device="cuda", compute_type="int8_float16")
     print("[OK] Whisper loaded on GPU (CUDA)")
 except Exception as e:
     print(f"[WARN] GPU unavailable ({e}), falling back to CPU")
-    whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+    whisper_model = WhisperModel("small", device="cpu", compute_type="int8")
 
 # Share Whisper model reference with dashboard server
 jarvis_state.state.whisper_model = whisper_model
@@ -187,30 +206,14 @@ def record_command():
         "command.wav", 
         vad_filter=True, 
         no_speech_threshold=0.6,
-        temperature=0.0  # decrease randomness to avoid hallucinations
+        temperature=0.0,  # decrease randomness to avoid hallucinations
+        initial_prompt=jarvis_state.BILINGUAL_PROMPT
     )
     jarvis_state.state.status = "idle"
     return " ".join([seg.text for seg in segments]).strip()
 
 
-# Start dashboard server thread
-flask_thread = threading.Thread(target=run_server, args=(5000,), daemon=True)
-flask_thread.start()
-
-# Automatically open the dashboard in the default browser after a short delay
-def open_browser():
-    time.sleep(1.5)
-    import webbrowser
-    webbrowser.open("http://localhost:5000")
-
-# Check if running in server-only mode (bypasses opening the local UI)
-import sys
-server_only = "--server-only" in sys.argv or "--no-ui" in sys.argv
-
-if not server_only:
-    threading.Thread(target=open_browser, daemon=True).start()
-else:
-    print("[OK] Server-only mode active. Local browser launch bypassed.")
+# System ready for operation
 
 
 # ── Global Hotkey Trigger Setup ──
@@ -333,6 +336,17 @@ try:
                     print("[Spotify] Playback command detected. Exiting conversation mode.")
                     in_conversation = False
                     break
+
+                # Exit conversation to resume music if a volume change command succeeded
+                t = command_text.lower()
+                is_up = any(w in t for w in ["up", "increase", "raise", "higher", "louder", "turn up"])
+                is_down = any(w in t for w in ["down", "decrease", "lower", "quieter", "turn down", "reduce"])
+                if is_up or is_down:
+                    res_lower = response.lower()
+                    if "adjusted volume" in res_lower or "set the system volume" in res_lower or "volume set to" in res_lower:
+                        print("[Spotify] Volume change command succeeded. Exit conversation mode to resume music.")
+                        in_conversation = False
+                        break
                 
                 # Print a small indicator that we are listening again
                 print("\n[Jarvis is listening for follow-up...]")

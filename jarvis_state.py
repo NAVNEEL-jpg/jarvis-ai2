@@ -8,6 +8,7 @@ class JarvisState:
         self._last_response = ""
         self._keyboard_color = "#00f0ff"
         self._alarms = []
+        self._power_schedules = []
         self._is_locked = True
         self._active_mic_device = "laptop"  # "laptop" | "mobile" | "both"
         self.lock = threading.Lock()
@@ -72,6 +73,16 @@ class JarvisState:
     def alarms(self, value):
         with self.lock:
             self._alarms = list(value)
+
+    @property
+    def power_schedules(self):
+        with self.lock:
+            return list(self._power_schedules)
+
+    @power_schedules.setter
+    def power_schedules(self, value):
+        with self.lock:
+            self._power_schedules = list(value)
 
     @property
     def is_locked(self):
@@ -192,6 +203,7 @@ class JarvisState:
                 "last_response": self._last_response,
                 "keyboard_color": self._keyboard_color,
                 "alarms": self._alarms,
+                "power_schedules": self._power_schedules,
                 "is_locked": self._is_locked,
                 "active_mic_device": self._active_mic_device,
                 "last_speech_id": self._last_speech_id,
@@ -209,3 +221,10 @@ class JarvisState:
 
 state = JarvisState()
 
+BILINGUAL_PROMPT = (
+    "Hey Jarvis, play some music. Play Bengali songs, Rabindra Sangeet, "
+    "Arijit Singh, Shreya Ghoshal, Anupam Roy, Nachiketa, Hemanta Mukherjee, "
+    "Kishore Kumar, Manna Dey, Fossils, Cactus, Anjan Dutt, Rupam Islam. "
+    "Play songs like: Ami Tomake Bhalobashi, Amar Sonar Bangla, Ekla Cholo Re, "
+    "Tomake Chaye, Tumi Jaake Bhalobasho, Prithibi Ta Gol, Bosey Bosey Keno Debo."
+)

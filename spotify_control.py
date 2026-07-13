@@ -145,7 +145,9 @@ def get_active_device(sp, prefer: str = "auto"):
 
 
 def play_music(sp, action_type, query, prefer: str = "auto"):
-    jarvis_state.state.client_open_url = "https://open.spotify.com"
+    device_id = get_active_device(sp, prefer=prefer)
+    if not device_id:
+        jarvis_state.state.client_open_url = "https://open.spotify.com"
     try:
         # Fallback if the query is a generic "music" command
         clean_query = query.lower().strip()
@@ -155,7 +157,6 @@ def play_music(sp, action_type, query, prefer: str = "auto"):
                 return play_liked_songs(sp, prefer=prefer)
             return res
 
-        device_id = get_active_device(sp, prefer=prefer)
         if not device_id:
             return "No active Spotify devices found, Sir. Please open Spotify on a device."
 
@@ -224,9 +225,10 @@ def pause_playback(sp):
 
 
 def resume_playback(sp, prefer: str = "auto"):
-    jarvis_state.state.client_open_url = "https://open.spotify.com"
+    device_id = get_active_device(sp, prefer)
+    if not device_id:
+        jarvis_state.state.client_open_url = "https://open.spotify.com"
     try:
-        device_id = get_active_device(sp, prefer)
         if device_id:
             sp.start_playback(device_id=device_id)
             return "Resuming music, Sir."
@@ -346,9 +348,10 @@ def get_my_playlists(sp, limit: int = 10) -> str:
 
 def play_liked_songs(sp, prefer: str = "auto") -> str:
     """Play the user's liked/saved tracks."""
-    jarvis_state.state.client_open_url = "https://open.spotify.com"
+    device_id = get_active_device(sp, prefer)
+    if not device_id:
+        jarvis_state.state.client_open_url = "https://open.spotify.com"
     try:
-        device_id = get_active_device(sp, prefer)
         if not device_id:
             return "No active Spotify device found, Sir."
         results = sp.current_user_saved_tracks(limit=50)
