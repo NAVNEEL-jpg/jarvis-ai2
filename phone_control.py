@@ -27,6 +27,26 @@ load_dotenv()
 _ADB_TARGET = os.environ.get("PHONE_ADB_TARGET", "")           # e.g. "192.168.1.5:5555"
 _HTTP_URL   = os.environ.get("PHONE_HTTP_URL", "").rstrip("/") # e.g. "http://192.168.1.5:8765"
 
+# Resolve adb binary — use PATH if available, fall back to the known WinGet install path
+_ADB_FALLBACK = (
+    r"C:\Users\admin\AppData\Local\Microsoft\WinGet\Packages"
+    r"\Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe"
+    r"\platform-tools\adb.exe"
+)
+
+def _find_adb() -> str:
+    """Return the adb executable path, preferring PATH, falling back to WinGet location."""
+    import shutil
+    found = shutil.which("adb")
+    if found:
+        return found
+    if os.path.isfile(_ADB_FALLBACK):
+        return _ADB_FALLBACK
+    return "adb"  # let it fail naturally with a clear error
+
+_ADB_EXE = _find_adb()
+
+
 # Map of spoken app names → Android package name
 APP_PACKAGE_MAP = {
     "whatsapp":          "com.whatsapp",
@@ -74,7 +94,7 @@ APP_PACKAGE_MAP = {
 
 def _adb_run(args: list, timeout: int = 8) -> tuple:
     """Run an adb command. Returns (success: bool, output: str)."""
-    cmd = ["adb"]
+    cmd = [_ADB_EXE]
     if _ADB_TARGET:
         cmd += ["-s", _ADB_TARGET]
     cmd += args

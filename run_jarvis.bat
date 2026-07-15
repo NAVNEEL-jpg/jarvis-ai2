@@ -52,9 +52,10 @@ start "Jarvis ngrok Tunnel" cmd /k ".\ngrok.exe http --url=probation-tiptoeing-e
 call .venv\Scripts\activate.bat
 
 echo [PHONE] Connecting to Android phone via ADB...
-adb connect 192.168.29.109:34067 > nul 2>&1
+set ADB_EXE=C:\Users\admin\AppData\Local\Microsoft\WinGet\Packages\Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe\platform-tools\adb.exe
+"%ADB_EXE%" connect 192.168.29.109:34067 > nul 2>&1
 if errorlevel 1 (
-    echo [PHONE] Phone not found - will try again when needed.
+    echo [PHONE] Phone not reachable - will auto-reconnect when needed.
 ) else (
     echo [PHONE] Phone connected via ADB.
 )
