@@ -128,6 +128,33 @@ def whatsapp():
     return jsonify({"status": "ok" if ok else "error", "message": out})
 
 
+@app.route("/go_home", methods=["POST"])
+def go_home():
+    try:
+        r = subprocess.run(["input", "keyevent", "3"], capture_output=True, text=True, timeout=5)
+        return jsonify({"status": "ok", "message": r.stdout})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/go_back", methods=["POST"])
+def go_back():
+    try:
+        r = subprocess.run(["input", "keyevent", "4"], capture_output=True, text=True, timeout=5)
+        return jsonify({"status": "ok", "message": r.stdout})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/refresh", methods=["POST"])
+def refresh():
+    try:
+        r = subprocess.run(["input", "swipe", "500", "400", "500", "1200", "300"], capture_output=True, text=True, timeout=5)
+        return jsonify({"status": "ok", "message": r.stdout})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 if __name__ == "__main__":
     print("Jarvis Termux server starting on port 8765...")
     print("Find your IP with: ip addr show wlan0 | grep inet")

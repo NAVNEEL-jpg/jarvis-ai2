@@ -383,6 +383,44 @@ def wake_phone() -> str:
     return "Phone screen is awake, Sir." if ok else f"I was unable to wake the phone, Sir. {out}"
 
 
+def go_home_on_phone() -> str:
+    """Navigate back to the phone's home screen."""
+    adb_args = ["shell", "input", "keyevent", "3"]  # KEYCODE_HOME
+    return _execute(
+        adb_args=adb_args,
+        http_endpoint="/go_home",
+        http_payload={},
+        success_msg="Navigating to your home screen, Sir.",
+        fail_prefix="I was unable to go to the home screen, Sir"
+    )
+
+
+def go_back_on_phone() -> str:
+    """Go back to the previous screen or page on the phone."""
+    adb_args = ["shell", "input", "keyevent", "4"]  # KEYCODE_BACK
+    return _execute(
+        adb_args=adb_args,
+        http_endpoint="/go_back",
+        http_payload={},
+        success_msg="Going back, Sir.",
+        fail_prefix="I was unable to go back, Sir"
+    )
+
+
+def refresh_page_on_phone() -> str:
+    """Refresh the current browser page or app feed on the phone."""
+    # We do a swipe down gesture from the middle-top to middle-bottom to refresh pages
+    # Swipe from (500, 400) to (500, 1200) over 300ms
+    adb_args = ["shell", "input", "swipe", "500", "400", "500", "1200", "300"]
+    return _execute(
+        adb_args=adb_args,
+        http_endpoint="/refresh",
+        http_payload={},
+        success_msg="Refreshing the page, Sir.",
+        fail_prefix="I was unable to refresh the page, Sir"
+    )
+
+
 def phone_status() -> str:
     """Return a quick summary of phone connection and battery."""
     if is_adb_connected():

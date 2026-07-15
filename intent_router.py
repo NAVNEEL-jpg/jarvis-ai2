@@ -1844,7 +1844,8 @@ _PHONE_KEYWORDS = {
     "phone", "android", "mobile", "call", "dial",
     "whatsapp", "alarm on", "chrome on", "on my phone", "on phone",
     "phone battery", "phone volume", "phone screenshot", "lock phone",
-    "wake phone", "connect phone", "adb",
+    "wake phone", "connect phone", "adb", "refresh phone", "reload phone",
+    "go home on phone", "go back on phone",
 }
 
 def _is_phone_command(text: str) -> bool:
@@ -1852,6 +1853,11 @@ def _is_phone_command(text: str) -> bool:
     t = text.lower()
     # Direct keyword match
     if any(kw in t for kw in _PHONE_KEYWORDS):
+        return True
+    # Fast path for standalone home/back/refresh if phone is active or explicitly asked
+    if any(phrase in t for phrase in ["go back on", "go home on", "refresh the page on", "refresh page on"]):
+        return True
+    if t in ("go home", "go back", "refresh page", "refresh the page", "refresh app", "reload page"):
         return True
     # Calling a number (digits + call/dial)
     if re.search(r"\b(?:call|dial)\b", t) and re.search(r"\d{6,}", t):
@@ -1888,6 +1894,16 @@ def _handle_phone(text: str):
                              "turn on phone screen"]):
         return phone_control.wake_phone()
 
+    # Instant navigation paths
+    if t in ("go home", "go home on phone", "go to home screen", "phone home"):
+        return phone_control.go_home_on_phone()
+
+    if t in ("go back", "go back on phone", "back on phone", "phone back"):
+        return phone_control.go_back_on_phone()
+
+    if t in ("refresh", "refresh page", "refresh the page", "refresh on phone", "refresh page on phone", "reload page"):
+        return phone_control.refresh_page_on_phone()
+
     if any(p in t for p in ["phone screenshot", "screenshot on phone",
                              "screenshot my phone", "take a phone screenshot"]):
         return phone_control.take_phone_screenshot()
@@ -1909,6 +1925,9 @@ def _handle_phone(text: str):
         phone_control.wake_phone,
         phone_control.adb_connect,
         phone_control.phone_status,
+        phone_control.go_home_on_phone,
+        phone_control.go_back_on_phone,
+        phone_control.refresh_page_on_phone,
     ]
 
     import datetime
