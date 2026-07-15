@@ -50,6 +50,15 @@ echo.
 start "Jarvis ngrok Tunnel" cmd /k ".\ngrok.exe http --url=probation-tiptoeing-evade.ngrok-free.dev 5000"
 
 call .venv\Scripts\activate.bat
+
+echo [PHONE] Connecting to Android phone via ADB...
+adb connect 192.168.29.109:34067 > nul 2>&1
+if errorlevel 1 (
+    echo [PHONE] Phone not found - will try again when needed.
+) else (
+    echo [PHONE] Phone connected via ADB.
+)
+
 python -u jarvis.py
 echo.
 echo Jarvis has stopped. Press any key to close.

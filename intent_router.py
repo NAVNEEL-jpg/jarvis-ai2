@@ -726,6 +726,10 @@ def handle_command(text):
     if open_app_res:
         return open_app_res
 
+    phone_res = _handle_phone(text_lower)
+    if phone_res:
+        return phone_res
+
 
     # Custom command: Opinion about Sayani/her
     is_sayani_name = any(name in text_lower for name in [
@@ -1830,6 +1834,197 @@ def _handle_open_app(text: str):
             return None
         from system_actions import open_app
         return open_app(app_name)
+    return None
+
+
+# ── Phone / Android automation handler ────────────────────────────────────────
+
+# Keywords that signal a phone-related command
+_PHONE_KEYWORDS = {
+    "phone", "android", "mobile", "call", "dial",
+    "whatsapp", "alarm on", "chrome on", "on my phone", "on phone",
+    "phone battery", "phone volume", "phone screenshot", "lock phone",
+    "wake phone", "connect phone", "adb",
+}
+
+def _is_phone_command(text: str) -> bool:
+    """Quick pre-filter: returns True if the text is likely a phone command."""
+    t = text.lower()
+    # Direct keyword match
+    if any(kw in t for kw in _PHONE_KEYWORDS):
+        return True
+    # Calling a number (digits + call/dial)
+    if re.search(r"\b(?:call|dial)\b", t) and re.search(r"\d{6,}", t):
+        return True
+    return False
+
+
+def _handle_phone(text: str):
+    """
+    Route phone-related commands to phone_control.py using Gemini function
+    calling. Any natural phrasing is understood — no rigid regex required.
+    A fast keyword pre-filter avoids sending irrelevant commands to Gemini.
+    """
+    if not _is_phone_command(text):
+        return None
+
+    import phone_control
+
+    # ── Instant hard-coded paths (no AI needed, always fast) ─────────────
+    t = text.lower().strip()
+
+    if t in ("connect phone", "connect my phone", "connect android") or \
+            ("connect" in t and "phone" in t):
+        return phone_control.adb_connect()
+
+    if any(p in t for p in ["phone status", "phone battery", "is phone connected",
+                             "check phone", "phone connection"]):
+        return phone_control.phone_status()
+
+    if any(p in t for p in ["lock phone", "lock the phone", "lock my phone"]):
+        return phone_control.lock_phone()
+
+    if any(p in t for p in ["wake phone", "wake up phone", "wake my phone",
+                             "turn on phone screen"]):
+        return phone_control.wake_phone()
+
+    if any(p in t for p in ["phone screenshot", "screenshot on phone",
+                             "screenshot my phone", "take a phone screenshot"]):
+        return phone_control.take_phone_screenshot()
+
+    # ── Gemini function-calling for everything else ───────────────────────
+    # Expose all phone_control public functions as tools so Gemini can pick
+    # the right one and extract arguments from any natural phrasing.
+    phone_tools = [
+        phone_control.open_app_on_phone,
+        phone_control.make_call,
+        phone_control.set_alarm_on_phone,
+        phone_control.open_chrome_on_phone,
+        phone_control.google_search_on_phone,
+        phone_control.send_whatsapp_message,
+        phone_control.set_phone_volume,
+        phone_control.take_phone_screenshot,
+        phone_control.get_phone_battery,
+        phone_control.lock_phone,
+        phone_control.wake_phone,
+        phone_control.adb_connect,
+        phone_control.phone_status,
+    ]
+
+    import datetime
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    phone_system = (
+        f"{_SYSTEM_PROMPT} "
+        f"Current date and time: {now_str}. "
+        "You also have access to tools that control Sir's Android phone via ADB. "
+        "When Sir asks you to perform an action on his phone, call the appropriate "
+        "phone tool with the correct arguments — do not explain it, just call it. "
+        "Argument rules: "
+        "set_alarm_on_phone → hour as integer 0-23, minute as integer 0-59. "
+        "open_app_on_phone → lowercase app name only (e.g. 'whatsapp', 'youtube', 'maps'). "
+        "make_call → digits only, no spaces. "
+        "set_phone_volume → integer 0 to 15. "
+        "google_search_on_phone → the search query string only. "
+        "send_whatsapp_message → contact number and message text separately. "
+        "If no phone tool is appropriate, respond in character as J.A.R.V.I.S. — "
+        "polite, dry wit, always ending with 'Sir' where natural."
+    )
+
+    # Try lite model first (fast), escalate on failure
+    models_to_try = [_TIER["lite"], _TIER["medium"]]
+    for model in models_to_try:
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                response = gemini_client.models.generate_content(
+                    model=model,
+                    contents=text,
+                    config=types.GenerateContentConfig(
+                        system_instruction=phone_system,
+                        max_output_tokens=150,
+                        tools=phone_tools,
+                    )
+                )
+
+                if response.function_calls:
+                    results = []
+                    for call in response.function_calls:
+                        func_name = call.name
+                        func_args = call.args or {}
+                        if hasattr(phone_control, func_name):
+                            func = getattr(phone_control, func_name)
+                            try:
+                                print(f"[Phone/Gemini] {func_name}({func_args})")
+                                result = func(**func_args)
+                                results.append(str(result))
+                            except Exception as e:
+                                results.append(f"Phone action failed: {e}")
+                        else:
+                            results.append(f"Unknown phone function: {func_name}")
+                    return " ".join(results)
+
+                # Gemini gave a text response — not a phone command
+                # Return None so the main router falls through to general AI
+                return None
+
+            except Exception as e:
+                err_str = str(e)
+                is_404 = "404" in err_str or "NOT_FOUND" in err_str
+                is_429 = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
+                print(f"[Phone/Gemini] [{model}] attempt {attempt}: {e}")
+                if is_404:
+                    break
+                elif is_429:
+                    delay = _parse_retry_delay(err_str)
+                    time.sleep(min(delay, 8))
+                    break
+                elif attempt < _MAX_RETRIES:
+                    time.sleep(attempt * 1.5)
+                else:
+                    break
+
+    # Gemini unavailable — fall back to regex matching
+    print("[Phone] Gemini unavailable, using regex fallback...")
+    return _phone_regex_fallback(t)
+
+
+def _phone_regex_fallback(t: str):
+    """Regex-based fallback used only when Gemini is unavailable."""
+    import phone_control
+
+    m_call = re.match(r"(?:call|dial)\s+([\d\s\+\-()]{6,})", t)
+    if m_call:
+        return phone_control.make_call(m_call.group(1))
+
+    m_app = re.search(r"(?:open|launch|start)\s+(.+?)\s+on(?:\s+my)?\s+phone", t)
+    if m_app:
+        return phone_control.open_app_on_phone(m_app.group(1).strip())
+
+    if "alarm" in t and "phone" in t:
+        m_abs = re.search(r"(?:for|at)\s+(\d{1,2})[:.]?(\d{2})?\s*(am|pm)?", t)
+        if m_abs:
+            hours = int(m_abs.group(1))
+            minutes = int(m_abs.group(2)) if m_abs.group(2) else 0
+            ampm = (m_abs.group(3) or "").lower()
+            if ampm == "pm" and hours < 12:
+                hours += 12
+            elif ampm == "am" and hours == 12:
+                hours = 0
+            return phone_control.set_alarm_on_phone(hours, minutes)
+
+    m_search = re.search(r"(?:search|google)\s+(.+?)\s+on(?:\s+my)?\s+phone", t)
+    if m_search:
+        return phone_control.google_search_on_phone(m_search.group(1).strip())
+
+    m_vol = re.search(r"phone\s+volume\s+(?:to\s+)?(\d+)", t)
+    if m_vol:
+        return phone_control.set_phone_volume(int(m_vol.group(1)))
+
+    m_wa = re.search(
+        r"whatsapp\s+(?:message\s+)?(?:to\s+)?([\d\+]+)\s+(?:saying|with)\s+(.+)", t
+    )
+    if m_wa:
+        return phone_control.send_whatsapp_message(m_wa.group(1), m_wa.group(2))
+
     return None
 
 
