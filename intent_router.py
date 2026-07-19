@@ -1850,7 +1850,7 @@ _PHONE_KEYWORDS = {
     "whatsapp", "alarm on", "chrome on", "on my phone", "on phone",
     "phone battery", "phone volume", "phone screenshot", "lock phone",
     "wake phone", "connect phone", "adb", "refresh phone", "reload phone",
-    "go home on phone", "go back on phone",
+    "go home on phone", "go back on phone", "sms", "text", "message",
 }
 
 def _is_phone_command(text: str) -> bool:
@@ -1919,6 +1919,7 @@ def _handle_phone(text: str):
     phone_tools = [
         phone_control.open_app_on_phone,
         phone_control.make_call,
+        phone_control.send_sms,
         phone_control.set_alarm_on_phone,
         phone_control.open_chrome_on_phone,
         phone_control.google_search_on_phone,
@@ -1940,12 +1941,13 @@ def _handle_phone(text: str):
     phone_system = (
         "You are J.A.R.V.I.S., a loyal assistant. "
         "You have complete access to tools that control Sir's Android phone via ADB. "
-        "When Sir asks you to do anything on his phone (like open an app, make a call, set an alarm, check battery, open Chrome, search, change volume, go home/back, or refresh), "
+        "When Sir asks you to do anything on his phone (like open an app, make a call, send an SMS, set an alarm, check battery, open Chrome, search, change volume, go home/back, or refresh), "
         "you MUST call the matching phone tool immediately. Do not say you cannot do it. Do not say you are only on PC. "
         "Argument rules: "
         "set_alarm_on_phone → hour as integer 0-23, minute as integer 0-59. "
         "open_app_on_phone → lowercase app name only (e.g. 'whatsapp', 'youtube', 'maps', 'chrome'). "
         "make_call → digits only, no spaces. "
+        "send_sms → contact number and message text separately. "
         "set_phone_volume → integer 0 to 15. "
         "google_search_on_phone → the search query string only. "
         "send_whatsapp_message → contact number and message text separately. "
@@ -2054,6 +2056,19 @@ def _phone_regex_fallback(t: str):
     )
     if m_wa:
         return phone_control.send_whatsapp_message(m_wa.group(1), m_wa.group(2))
+
+    # SMS: "send sms to +91XXXXXXXXXX saying hello" or "text +91XXXXXXXXXX hello"
+    m_sms = re.search(
+        r"(?:send\s+)?sms\s+(?:to\s+)?([\d\+]+)\s+(?:saying|with|body)\s+(.+)", t
+    )
+    if m_sms:
+        return phone_control.send_sms(m_sms.group(1), m_sms.group(2))
+
+    m_sms2 = re.search(
+        r"(?:text|message)\s+([\d\+]+)\s+(?:saying|with|body)?\s*(.+)", t
+    )
+    if m_sms2:
+        return phone_control.send_sms(m_sms2.group(1), m_sms2.group(2))
 
     return None
 

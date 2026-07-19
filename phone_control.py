@@ -274,6 +274,28 @@ def make_call(number: str) -> str:
     )
 
 
+def send_sms(number: str, message: str) -> str:
+    """Send an SMS text message to a phone number."""
+    clean_number = re.sub(r"[^\d+]", "", number)
+    if not clean_number:
+        return "I couldn't extract a valid number for the SMS, Sir. Please state it clearly."
+
+    adb_args = [
+        "shell", "am", "start",
+        "-a", "android.intent.action.SENDTO",
+        "-d", f"sms:{clean_number}",
+        "--es", "sms_body", message,
+        "--ez", "exit_on_sent", "true"
+    ]
+    return _execute(
+        adb_args=adb_args,
+        http_endpoint="/send_sms",
+        http_payload={"number": clean_number, "message": message},
+        success_msg=f"SMS prepared to send to {clean_number}, Sir.",
+        fail_prefix="I was unable to send the SMS, Sir"
+    )
+
+
 def set_alarm_on_phone(hour: int, minute: int = 0, message: str = "Jarvis Alarm") -> str:
     """Set an alarm on the Android phone's clock app."""
     adb_args = [

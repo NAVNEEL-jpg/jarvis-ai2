@@ -128,6 +128,33 @@ def whatsapp():
     return jsonify({"status": "ok" if ok else "error", "message": out})
 
 
+@app.route("/send_sms", methods=["POST"])
+def send_sms():
+    data = request.get_json()
+    number = data.get("number", "")
+    message = data.get("message", "")
+    if not number or not message:
+        return jsonify({"error": "Missing number or message"}), 400
+    try:
+        # Try sending SMS silently via Termux-API package
+        r = subprocess.run(["termux-sms-send", "-n", number, message], capture_output=True, text=True, timeout=10)
+        if r.returncode == 0:
+            return jsonify({"status": "ok", "message": "SMS sent successfully via Termux-API."})
+    except FileNotFoundError:
+        pass  # termux-sms-send not installed, fall back to native intent
+    except Exception as e:
+        print(f"Termux SMS send failed: {e}")
+
+    # Fallback: open default SMS app with pre-filled message
+    ok, out = run_am([
+        "-a", "android.intent.action.SENDTO",
+        "-d", f"sms:{number}",
+        "--es", "sms_body", message,
+        "--ez", "exit_on_sent", "true"
+    ])
+    return jsonify({"status": "ok" if ok else "error", "message": out})
+
+
 @app.route("/go_home", methods=["POST"])
 def go_home():
     try:
