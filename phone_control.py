@@ -95,7 +95,9 @@ APP_PACKAGE_MAP = {
 def _adb_run(args: list, timeout: int = 8) -> tuple:
     """Run an adb command. Returns (success: bool, output: str)."""
     cmd = [_ADB_EXE]
-    if _ADB_TARGET:
+    # Do not use -s for global commands like devices, connect, disconnect, pair
+    global_cmds = {"devices", "connect", "disconnect", "pair", "start-server", "kill-server", "version"}
+    if _ADB_TARGET and not (args and args[0] in global_cmds):
         cmd += ["-s", _ADB_TARGET]
     cmd += args
     try:
