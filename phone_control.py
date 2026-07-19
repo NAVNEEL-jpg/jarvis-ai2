@@ -168,13 +168,19 @@ def _auto_connect() -> bool:
     return connected
 
 
+# Global flag to track if any phone control tool was executed in this turn
+executed = False
+
+
 def _execute(adb_args: list, http_endpoint: str, http_payload: dict,
              success_msg: str, fail_prefix: str = "Phone action failed") -> str:
     """Try ADB first; if disconnected try auto-reconnect; then fall back to HTTP."""
+    global executed
     if is_adb_connected():
         ok, out = _adb_run(adb_args)
         if ok:
             print(f"[Phone/ADB] {' '.join(adb_args[:4])}")
+            executed = True
             return success_msg
         print(f"[Phone/ADB] Failed: {out}. Trying HTTP fallback...")
     else:
@@ -183,12 +189,14 @@ def _execute(adb_args: list, http_endpoint: str, http_payload: dict,
         if _auto_connect() and is_adb_connected():
             ok, out = _adb_run(adb_args)
             if ok:
+                executed = True
                 return success_msg
         print("[Phone/ADB] Auto-reconnect failed. Trying HTTP fallback...")
 
     ok, out = _http_send(http_endpoint, http_payload)
     if ok:
         print(f"[Phone/HTTP] {http_endpoint}")
+        executed = True
         return success_msg
     return f"{fail_prefix}: {out}"
 
@@ -197,8 +205,17 @@ def _execute(adb_args: list, http_endpoint: str, http_payload: dict,
 
 def open_app_on_phone(app_name: str) -> str:
     """Open an Android app by its friendly spoken name."""
+    import difflib
     name = app_name.lower().strip()
     package = APP_PACKAGE_MAP.get(name)
+
+    if not package:
+        # Check close spelling matches (e.g. typos, speech recognition errors)
+        matches = difflib.get_close_matches(name, list(APP_PACKAGE_MAP.keys()), n=1, cutoff=0.55)
+        if matches:
+            matched_name = matches[0]
+            package = APP_PACKAGE_MAP[matched_name]
+            name = matched_name
 
     if not package:
         for key, pkg in APP_PACKAGE_MAP.items():
@@ -265,8 +282,8 @@ def set_alarm_on_phone(hour: int, minute: int = 0, message: str = "Jarvis Alarm"
     )
 
 
-def open_chrome_on_phone(url: str) -> str:
-    """Open a URL in Chrome on the phone."""
+def open_chrome_on_phone(url: str = "google.com") -> str:
+    """Open a URL in Chrome on the phone. Defaults to google.com if no URL is provided."""
     if not url.startswith("http"):
         url = "https://" + url
     adb_args = [

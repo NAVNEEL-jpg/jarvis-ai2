@@ -680,6 +680,11 @@ def handle_command(text):
             
         return "Systems are locked, Sir. Please provide the passcode, voice authentication, or run face verification."
 
+    # Try Android phone automation first (so phone commands aren't hijacked by PC open_app/alarm)
+    phone_res = _handle_phone(text_lower)
+    if phone_res:
+        return phone_res
+
     kb_color_res = _handle_keyboard_color(text_lower)
     if kb_color_res:
         return kb_color_res
@@ -725,10 +730,6 @@ def handle_command(text):
     open_app_res = _handle_open_app(text_lower)
     if open_app_res:
         return open_app_res
-
-    phone_res = _handle_phone(text_lower)
-    if phone_res:
-        return phone_res
 
 
     # Custom command: Opinion about Sayani/her
@@ -1743,6 +1744,8 @@ def _handle_fan_mode(text: str):
     return None
 
 def _handle_alarm(text: str):
+    if _is_phone_command(text):
+        return None
     if "alarm" in text and any(w in text for w in ["set", "create", "add", "wake"]):
         import jarvis_state
         import datetime
@@ -1828,6 +1831,8 @@ def _handle_calculation(text: str):
         return None
 
 def _handle_open_app(text: str):
+    if _is_phone_command(text):
+        return None
     if text.startswith("open "):
         app_name = text[5:].strip()
         if "website" in app_name or "jersey" in app_name or app_name.endswith(".in") or app_name.endswith(".com"):
@@ -1933,20 +1938,18 @@ def _handle_phone(text: str):
     import datetime
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     phone_system = (
-        f"{_SYSTEM_PROMPT} "
-        f"Current date and time: {now_str}. "
-        "You also have access to tools that control Sir's Android phone via ADB. "
-        "When Sir asks you to perform an action on his phone, call the appropriate "
-        "phone tool with the correct arguments — do not explain it, just call it. "
+        "You are J.A.R.V.I.S., a loyal assistant. "
+        "You have complete access to tools that control Sir's Android phone via ADB. "
+        "When Sir asks you to do anything on his phone (like open an app, make a call, set an alarm, check battery, open Chrome, search, change volume, go home/back, or refresh), "
+        "you MUST call the matching phone tool immediately. Do not say you cannot do it. Do not say you are only on PC. "
         "Argument rules: "
         "set_alarm_on_phone → hour as integer 0-23, minute as integer 0-59. "
-        "open_app_on_phone → lowercase app name only (e.g. 'whatsapp', 'youtube', 'maps'). "
+        "open_app_on_phone → lowercase app name only (e.g. 'whatsapp', 'youtube', 'maps', 'chrome'). "
         "make_call → digits only, no spaces. "
         "set_phone_volume → integer 0 to 15. "
         "google_search_on_phone → the search query string only. "
         "send_whatsapp_message → contact number and message text separately. "
-        "If no phone tool is appropriate, respond in character as J.A.R.V.I.S. — "
-        "polite, dry wit, always ending with 'Sir' where natural."
+        "If no phone tool matches the request, respond in character as J.A.R.V.I.S. — polite, dry wit, always ending with 'Sir'."
     )
 
     # Try lite model first (fast), escalate on failure
@@ -1954,6 +1957,9 @@ def _handle_phone(text: str):
     for model in models_to_try:
         for attempt in range(1, _MAX_RETRIES + 1):
             try:
+                # Reset execution flag before call
+                phone_control.executed = False
+
                 response = gemini_client.models.generate_content(
                     model=model,
                     contents=text,
@@ -1964,6 +1970,11 @@ def _handle_phone(text: str):
                     )
                 )
 
+                # If the new google-genai SDK implicitly executed functions, return the final text response
+                if phone_control.executed:
+                    return response.text
+
+                # Manual fallback if automatic execution was disabled or skipped
                 if response.function_calls:
                     results = []
                     for call in response.function_calls:
