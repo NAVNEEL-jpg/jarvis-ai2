@@ -225,8 +225,21 @@ def open_app_on_phone(app_name: str) -> str:
                 break
 
     if not package:
-        return (f"I don't have '{app_name}' in my registry, Sir. "
-                f"You may add it to APP_PACKAGE_MAP in phone_control.py.")
+        # Dynamic package scan fallback on device
+        print(f"[Phone] App '{name}' not in registry. Scanning device packages...")
+        ok, out = _adb_run(["shell", "pm", "list", "packages"])
+        if ok:
+            packages = [line.replace("package:", "").strip() for line in out.splitlines()]
+            # Find packages containing the app name (e.g. "telegram" -> "org.telegram.messenger")
+            matches = [pkg for pkg in packages if name in pkg.lower()]
+            if matches:
+                package = matches[0]
+                # Cache it in memory for subsequent calls
+                APP_PACKAGE_MAP[name] = package
+                print(f"[Phone] Found dynamic match: {package}")
+
+    if not package:
+        return f"I couldn't find '{app_name}' on your phone or in my registry, Sir."
 
     adb_args = [
         "shell", "monkey", "-p", package,
